@@ -532,29 +532,169 @@ def _extract_literal_values(node: ast.expr) -> Optional[list[str]]:
     return values if values else None
 
 
+def _extract_argparse_argument(node: ast.Call) -> Optional[dict]:
+    """Extract argument details from an add_argument() call.
+
+    Returns a dict with name, type, help, required, default, choices, or None
+    if the call can't be parsed.
+    """
+    if not node.args:
+        return None
+    first_arg = node.args[0]
+    if not isinstance(first_arg, ast.Constant) or not isinstance(first_arg.value, str):
+        return None
+
+    flag_str = first_arg.value
+    is_positional = not flag_str.startswith("-")
+
+    # Determine the parameter name
+    if is_positional:
+        name = flag_str.replace("-", "_")
+    else:
+        # Prefer long flag (--name) over short flag (-n)
+        name = None
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                if arg.value.startswith("--"):
+                    name = arg.value.lstrip("-").replace("-", "_")
+                    break
+        if not name:
+            name = flag_str.lstrip("-").replace("-", "_")
+
+    # Extract keyword arguments
+    help_text = ""
+    arg_type = "string"
+    default = None
+    choices = None
+    required = is_positional  # positional args are required by default
+    action = None
+
+    for kw in node.keywords:
+        if not isinstance(kw.value, ast.Constant):
+            # Handle type=int, type=str etc. (ast.Name)
+            if kw.arg == "type" and isinstance(kw.value, ast.Name):
+                type_map = {"str": "string", "int": "integer", "float": "float", "bool": "boolean"}
+                arg_type = type_map.get(kw.value.id, "string")
+            # Handle choices=[...] (ast.List)
+            elif kw.arg == "choices" and isinstance(kw.value, ast.List):
+                choices = []
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant):
+                        choices.append(str(elt.value))
+            continue
+
+        val = kw.value.value
+        if kw.arg == "help":
+            help_text = str(val)
+        elif kw.arg == "default":
+            default = str(val) if val is not None else None
+        elif kw.arg == "required":
+            required = bool(val)
+        elif kw.arg == "action":
+            action = str(val)
+
+    # store_true / store_false → boolean type, not required
+    if action in ("store_true", "store_false"):
+        arg_type = "boolean"
+        required = False
+        default = "False" if action == "store_true" else "True"
+
+    return {
+        "name": name,
+        "type": arg_type,
+        "help": help_text,
+        "required": required,
+        "default": default,
+        "choices": choices,
+        "is_positional": is_positional,
+    }
+
+
 def _detect_argparse_subcommands(tree: ast.Module) -> list[dict]:
-    """Detect argparse subcommand definitions from AST."""
+    """Detect argparse subcommand definitions and their arguments from AST.
+
+    Tracks which variable holds each subparser result so that subsequent
+    add_argument() calls can be associated with the correct subcommand.
+    """
     subcommands: list[dict] = []
+    # Map variable names to their subcommand index in the list
+    parser_vars: dict[str, int] = {}
+    # Track top-level parser variable for global arguments
+    top_parser_var: Optional[str] = None
+    global_arguments: list[dict] = []
 
     class ArgparseVisitor(ast.NodeVisitor):
-        def visit_Call(self, node: ast.Call):
-            # Look for add_parser("name", ...) calls
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "add_parser":
-                if node.args and isinstance(node.args[0], ast.Constant):
-                    cmd_name = str(node.args[0].value)
-                    help_text = ""
-                    for kw in node.keywords:
-                        if kw.arg == "help" and isinstance(kw.value, ast.Constant):
-                            help_text = str(kw.value.value)
-                    subcommands.append({"name": cmd_name, "help": help_text})
+        def visit_Assign(self, node: ast.Assign):
+            nonlocal top_parser_var
+            # Detect: parser = argparse.ArgumentParser(...)
+            if (
+                len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Call)
+            ):
+                target_name = node.targets[0].id
+                call = node.value
+                # ArgumentParser() call
+                if isinstance(call.func, ast.Attribute) and call.func.attr == "ArgumentParser":
+                    top_parser_var = target_name
+                elif isinstance(call.func, ast.Name) and call.func.id == "ArgumentParser":
+                    top_parser_var = target_name
 
-            # Look for add_argument("--name", ...) calls
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument":
-                pass  # Could extract argument details here
+                # proc = subparsers.add_parser("name", ...)
+                if isinstance(call.func, ast.Attribute) and call.func.attr == "add_parser":
+                    if call.args and isinstance(call.args[0], ast.Constant):
+                        cmd_name = str(call.args[0].value)
+                        help_text = ""
+                        for kw in call.keywords:
+                            if kw.arg == "help" and isinstance(kw.value, ast.Constant):
+                                help_text = str(kw.value.value)
+                        subcommands.append({"name": cmd_name, "help": help_text, "arguments": []})
+                        parser_vars[target_name] = len(subcommands) - 1
 
             self.generic_visit(node)
 
+        def visit_Expr(self, node: ast.Expr):
+            # Handle standalone calls like: subparsers.add_parser(...) without assignment
+            if isinstance(node.value, ast.Call):
+                call = node.value
+                if isinstance(call.func, ast.Attribute) and call.func.attr == "add_parser":
+                    if call.args and isinstance(call.args[0], ast.Constant):
+                        cmd_name = str(call.args[0].value)
+                        help_text = ""
+                        for kw in call.keywords:
+                            if kw.arg == "help" and isinstance(kw.value, ast.Constant):
+                                help_text = str(kw.value.value)
+                        subcommands.append({"name": cmd_name, "help": help_text, "arguments": []})
+
+            self.generic_visit(node)
+
+        def visit_Call(self, node: ast.Call):
+            # var.add_argument("--flag", ...)
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument":
+                arg_info = _extract_argparse_argument(node)
+                if arg_info:
+                    # Figure out which parser this belongs to
+                    if isinstance(node.func.value, ast.Name):
+                        var_name = node.func.value.id
+                        if var_name in parser_vars:
+                            idx = parser_vars[var_name]
+                            subcommands[idx]["arguments"].append(arg_info)
+                        elif var_name == top_parser_var:
+                            global_arguments.append(arg_info)
+
+            self.generic_visit(node)
+
+    # We need to handle the dual nonlocal issue — use a simple approach
+    # by making top_parser_var mutable via list
     ArgparseVisitor().visit(tree)
+
+    # Attach global arguments to all subcommands that have no arguments yet
+    if global_arguments and subcommands:
+        for subcmd in subcommands:
+            if not subcmd["arguments"]:
+                # Don't copy global args — they're on the parent parser
+                pass
+
     return subcommands
 
 
@@ -662,19 +802,37 @@ def ast_results_to_capabilities(
         for subcmd in result.subcommands:
             name = subcmd["name"].replace("-", "_")
             if name not in seen_names:
+                # Build parameters from extracted add_argument() calls
+                arguments = subcmd.get("arguments", [])
+                if arguments:
+                    params = []
+                    for arg in arguments:
+                        params.append(
+                            ParameterSpec(
+                                name=arg["name"],
+                                type=arg.get("type", "string"),
+                                description=arg.get("help", ""),
+                                required=arg.get("required", False),
+                                default=arg.get("default"),
+                                enum_values=arg.get("choices"),
+                            )
+                        )
+                else:
+                    # Fallback: generic args passthrough
+                    params = [
+                        ParameterSpec(
+                            name="args",
+                            type="string",
+                            description=f"Arguments for {subcmd['name']}",
+                            required=False,
+                        )
+                    ]
                 capabilities.append(
                     Capability(
                         name=name,
                         description=subcmd.get("help", f"Run {subcmd['name']} command"),
                         category="cli_command",
-                        parameters=[
-                            ParameterSpec(
-                                name="args",
-                                type="string",
-                                description=f"Arguments for {subcmd['name']}",
-                                required=False,
-                            )
-                        ],
+                        parameters=params,
                         source_file=file_path,
                         ipc_type=primary_ipc,
                     )

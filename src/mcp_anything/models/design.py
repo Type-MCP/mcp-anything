@@ -44,6 +44,7 @@ class ResourceSpec(BaseModel):
     name: str
     description: str
     mime_type: str = "application/json"
+    resource_type: str = "generic"  # "status", "commands", "config", "generic"
 
 
 class BackendConfig(BaseModel):

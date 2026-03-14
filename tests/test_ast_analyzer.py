@@ -90,6 +90,51 @@ class TestAnalyzePythonFile:
         assert "status" in subcmd_names
         assert "formats" in subcmd_names
 
+    def test_extracts_argparse_arguments(self, fake_cli_app):
+        files = scan_codebase(fake_cli_app)
+        main_file = next(f for f in files if f.path == "main.py")
+        result = analyze_python_file(fake_cli_app, main_file)
+
+        proc_subcmd = next(s for s in result.subcommands if s["name"] == "process")
+        args = proc_subcmd["arguments"]
+        arg_names = [a["name"] for a in args]
+        assert "input" in arg_names
+        assert "output" in arg_names
+        assert "format" in arg_names
+
+        # "input" is positional → required
+        input_arg = next(a for a in args if a["name"] == "input")
+        assert input_arg["required"] is True
+        assert input_arg["help"] == "Input file path"
+
+        # "--format" has choices and a default
+        format_arg = next(a for a in args if a["name"] == "format")
+        assert format_arg["required"] is False
+        assert format_arg["default"] == "json"
+        assert format_arg["choices"] == ["json", "csv", "xml"]
+
+    def test_subcommand_args_become_capability_params(self, fake_cli_app):
+        files = scan_codebase(fake_cli_app)
+        ast_results = {}
+        for fi in files:
+            if fi.language == Language.PYTHON:
+                r = analyze_python_file(fake_cli_app, fi)
+                if r:
+                    ast_results[fi.path] = r
+
+        capabilities = ast_results_to_capabilities(ast_results, IPCType.CLI)
+        process_cap = next(c for c in capabilities if c.name == "process")
+
+        param_names = [p.name for p in process_cap.parameters]
+        assert "input" in param_names
+        assert "output" in param_names
+        assert "format" in param_names
+        # Should NOT have the generic "args" passthrough
+        assert "args" not in param_names
+
+        format_param = next(p for p in process_cap.parameters if p.name == "format")
+        assert format_param.enum_values == ["json", "csv", "xml"]
+
     def test_skips_non_python(self, fake_cli_app):
         fi = FileInfo(path="foo.js", language=Language.JAVASCRIPT, size_bytes=100, line_count=10)
         result = analyze_python_file(fake_cli_app, fi)
@@ -353,6 +398,60 @@ def real_tool(path: str) -> str:
         assert "real_tool" in cap_names
         assert "quit" not in cap_names
         assert "abort" not in cap_names
+
+
+class TestArgparseExtraction:
+    def test_extracts_store_true_as_boolean(self, tmp_path):
+        code = '''
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    build = sub.add_parser("build", help="Build the project")
+    build.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    build.add_argument("--clean", action="store_true", help="Clean before build")
+    build.add_argument("target", help="Build target")
+'''
+        (tmp_path / "cli.py").write_text(code)
+        fi = FileInfo(path="cli.py", language=Language.PYTHON, size_bytes=300, line_count=10)
+        result = analyze_python_file(tmp_path, fi)
+
+        assert len(result.subcommands) == 1
+        build = result.subcommands[0]
+        args = build["arguments"]
+
+        verbose = next(a for a in args if a["name"] == "verbose")
+        assert verbose["type"] == "boolean"
+        assert verbose["required"] is False
+
+        target = next(a for a in args if a["name"] == "target")
+        assert target["required"] is True
+
+    def test_extracts_typed_arguments(self, tmp_path):
+        code = '''
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    run = sub.add_parser("run", help="Run task")
+    run.add_argument("--port", type=int, default=8080, help="Port number")
+    run.add_argument("--rate", type=float, help="Rate limit")
+'''
+        (tmp_path / "cli.py").write_text(code)
+        fi = FileInfo(path="cli.py", language=Language.PYTHON, size_bytes=200, line_count=8)
+        result = analyze_python_file(tmp_path, fi)
+
+        run = result.subcommands[0]
+        args = run["arguments"]
+
+        port = next(a for a in args if a["name"] == "port")
+        assert port["type"] == "integer"
+        assert port["default"] == "8080"
+
+        rate = next(a for a in args if a["name"] == "rate")
+        assert rate["type"] == "float"
 
 
 class TestClickExtraction:

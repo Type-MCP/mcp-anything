@@ -161,3 +161,48 @@ class TestEmitter:
         assert backend_path.exists()
         content = backend_path.read_text()
         ast.parse(content)
+
+    def test_resources_valid_python(self, sample_design, tmp_path):
+        emitter = Emitter(sample_design, tmp_path)
+        emitter.emit_all()
+
+        resources_path = tmp_path / "src" / "test_app" / "resources.py"
+        assert resources_path.exists()
+        content = resources_path.read_text()
+        ast.parse(content)
+
+    def test_mcp_config_generated(self, sample_design, tmp_path):
+        """PackagePhase should generate mcp.json config."""
+        import json
+        from unittest.mock import MagicMock
+
+        from mcp_anything.config import CLIOptions
+        from mcp_anything.models.manifest import GenerationManifest
+        from mcp_anything.pipeline.context import PipelineContext
+        from mcp_anything.pipeline.package import PackagePhase
+
+        # First emit package files so structure exists
+        emitter = Emitter(sample_design, tmp_path)
+        emitter.emit_all()
+        emitter.emit_packaging()
+
+        manifest = GenerationManifest(
+            codebase_path="/tmp/fake",
+            output_dir=str(tmp_path),
+            server_name="test-app",
+            design=sample_design,
+            generated_files=[],
+        )
+        options = CLIOptions(codebase_path=Path("/tmp/fake"))
+        console = MagicMock()
+        ctx = PipelineContext(options, manifest, console)
+
+        import asyncio
+        asyncio.run(PackagePhase().execute(ctx))
+
+        config_path = tmp_path / "mcp.json"
+        assert config_path.exists()
+        config = json.loads(config_path.read_text())
+        assert "mcpServers" in config
+        assert "test-app" in config["mcpServers"]
+        assert config["mcpServers"]["test-app"]["command"] == "mcp-test-app"

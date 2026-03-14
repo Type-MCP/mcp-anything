@@ -44,6 +44,11 @@ def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
             # The generic "args" param from subcommand detection is positional
             if p.name == "args":
                 arg_mapping[p.name] = {"style": "passthrough"}
+            elif p.required and not p.default:
+                # Positional arguments (required, no default)
+                arg_mapping[p.name] = {"style": "positional", "position": len(
+                    [v for v in arg_mapping.values() if v.get("style") == "positional"]
+                )}
             else:
                 arg_mapping[p.name] = {"style": "flag", "flag": f"--{p.name.replace('_', '-')}"}
         return ToolImpl(
@@ -126,25 +131,36 @@ def _build_backend_config(analysis: AnalysisResult, codebase_path: str = "") -> 
 
 def _generate_resources(analysis: AnalysisResult) -> list[ResourceSpec]:
     """Generate standard resource specs based on the application type."""
+    app = analysis.app_name
     resources = [
         ResourceSpec(
-            uri=f"app://{analysis.app_name}/status",
-            name=f"{analysis.app_name}_status",
-            description=f"Current status of {analysis.app_name}",
+            uri=f"app://{app}/status",
+            name=f"{_to_snake_case(app)}_status",
+            description=f"Current status and version of {app}",
+            resource_type="status",
+        ),
+        ResourceSpec(
+            uri=f"app://{app}/commands",
+            name=f"{_to_snake_case(app)}_commands",
+            description=f"Available commands and tools in {app}",
+            resource_type="commands",
         ),
     ]
 
-    # Add category-based resources
-    categories = {cap.category for cap in analysis.capabilities}
-    for category in sorted(categories):
-        if category != "general":
-            resources.append(
-                ResourceSpec(
-                    uri=f"app://{analysis.app_name}/{category}",
-                    name=f"{analysis.app_name}_{category}",
-                    description=f"Information about {category} in {analysis.app_name}",
-                )
+    # Add a config resource if we detect config-related capabilities
+    has_config = any(
+        cap.category in ("config", "query") or "config" in cap.name.lower()
+        for cap in analysis.capabilities
+    )
+    if has_config:
+        resources.append(
+            ResourceSpec(
+                uri=f"app://{app}/config",
+                name=f"{_to_snake_case(app)}_config",
+                description=f"Current configuration of {app}",
+                resource_type="config",
             )
+        )
 
     return resources
 

@@ -1,5 +1,6 @@
-"""Phase 6: PACKAGE — generate pyproject.toml and verify structure."""
+"""Phase 6: PACKAGE — generate pyproject.toml, verify structure, and emit MCP config."""
 
+import json
 from pathlib import Path
 
 from mcp_anything.codegen.emitter import Emitter
@@ -39,6 +40,9 @@ class PackagePhase(Phase):
 
         ctx.console.print(f"    Generated {len(generated)} packaging files")
 
+        # Generate MCP config snippet
+        self._emit_mcp_config(ctx, output_dir)
+
     def _verify_structure(self, output_dir: Path, package_name: str) -> list[str]:
         """Verify the generated package has the expected structure."""
         errors: list[str] = []
@@ -54,3 +58,31 @@ class PackagePhase(Phase):
                 errors.append(f"Missing expected file: {rel}")
 
         return errors
+
+    def _emit_mcp_config(self, ctx: PipelineContext, output_dir: Path) -> None:
+        """Generate a .mcp.json snippet for Claude Code integration."""
+        design = ctx.manifest.design
+        assert design is not None
+
+        server_slug = design.server_name.replace("_", "-")
+        package_name = design.server_name.replace("-", "_")
+
+        # The entry point command — use the installed console_scripts entry
+        mcp_config = {
+            "mcpServers": {
+                server_slug: {
+                    "command": f"mcp-{server_slug}",
+                    "args": [],
+                }
+            }
+        }
+
+        config_path = output_dir / "mcp.json"
+        config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
+        ctx.manifest.generated_files.append("mcp.json")
+
+        ctx.console.print("    Generated mcp.json config")
+        ctx.console.print()
+        ctx.console.print("    [bold]Add to your Claude Code config (.mcp.json):[/bold]")
+        snippet = json.dumps(mcp_config["mcpServers"], indent=6)
+        ctx.console.print(f"    {snippet}")
