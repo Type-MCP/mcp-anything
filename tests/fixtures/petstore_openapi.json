@@ -1,0 +1,195 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Petstore API",
+    "version": "1.0.0",
+    "description": "A sample pet store API"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080/api/v1"
+    }
+  ],
+  "paths": {
+    "/pets": {
+      "get": {
+        "operationId": "list_pets",
+        "summary": "List all pets",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20
+            },
+            "description": "Maximum number of pets to return"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["available", "pending", "sold"]
+            },
+            "description": "Filter by pet status"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of pets"
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_pet",
+        "summary": "Create a pet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pet created"
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "get_pet",
+        "summary": "Get a pet by ID",
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The pet ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A pet"
+          }
+        }
+      },
+      "put": {
+        "operationId": "update_pet",
+        "summary": "Update a pet",
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PetCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pet updated"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_pet",
+        "summary": "Delete a pet",
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Pet deleted"
+          }
+        }
+      }
+    },
+    "/pets/{petId}/vaccinations": {
+      "get": {
+        "operationId": "list_vaccinations",
+        "summary": "List vaccinations for a pet",
+        "parameters": [
+          {
+            "name": "petId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of vaccinations"
+          }
+        }
+      }
+    },
+    "/store/inventory": {
+      "get": {
+        "operationId": "get_inventory",
+        "summary": "Returns pet inventories by status",
+        "responses": {
+          "200": {
+            "description": "Inventory map"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PetCreate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The pet's name"
+          },
+          "species": {
+            "type": "string",
+            "description": "The pet's species"
+          },
+          "age": {
+            "type": "integer",
+            "description": "Age in years"
+          },
+          "vaccinated": {
+            "type": "boolean",
+            "description": "Whether the pet is vaccinated"
+          }
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
 {% for tool in tools %}
     @server.tool()
     async def {{ tool.name }}(
-    {% for param in tool.parameters %}
+    {% for param in tool.parameters | sort(attribute='required', reverse=true) %}
     {% if param.required %}
         {{ param.name }}: {{ param.type | python_type }},
     {% else %}

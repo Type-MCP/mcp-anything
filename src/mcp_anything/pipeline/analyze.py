@@ -13,6 +13,11 @@ from mcp_anything.analysis.java_analyzer import (
     analyze_java_file,
     java_results_to_capabilities,
 )
+from mcp_anything.analysis.openapi_analyzer import (
+    find_openapi_specs,
+    openapi_to_capabilities,
+    parse_openapi_spec,
+)
 from mcp_anything.analysis.llm_analyzer import llm_analyze
 from mcp_anything.analysis.scanner import scan_codebase
 from mcp_anything.models.analysis import (
@@ -40,8 +45,11 @@ class AnalyzePhase(Phase):
         files = scan_codebase(root)
         console.print(f"    Found {len(files)} source files")
 
-        if not files:
-            raise RuntimeError(f"No source files found in {root}")
+        # Check for OpenAPI specs even if no source files
+        spec_files = find_openapi_specs(root)
+
+        if not files and not spec_files:
+            raise RuntimeError(f"No source files or API specs found in {root}")
 
         # 2. Run detectors
         console.print("    Running IPC detectors...")
@@ -112,7 +120,19 @@ class AnalyzePhase(Phase):
                 f"    {'/'.join(frameworks).title()}: {route_count} HTTP routes"
             )
 
-        # 3c. For non-Python or thin codebases, try --help parsing
+        # 3c. OpenAPI/Swagger spec analysis
+        openapi_capabilities = []
+        for spec_path in spec_files:
+            spec = parse_openapi_spec(spec_path)
+            if spec:
+                rel_path = str(spec_path.relative_to(root.resolve()))
+                caps = openapi_to_capabilities(spec, rel_path)
+                openapi_capabilities.extend(caps)
+                console.print(
+                    f"    OpenAPI: {len(caps)} endpoints from {rel_path}"
+                )
+
+        # 3d. For non-Python or thin codebases, try --help parsing
         ast_cap_count = sum(
             len(r.functions) + len(r.cli_commands) for r in ast_results.values()
         )
@@ -149,7 +169,7 @@ class AnalyzePhase(Phase):
         else:
             result = self._ast_fallback(
                 ctx.manifest.server_name, files, all_mechanisms, ast_results,
-                java_results, flask_fastapi_results,
+                java_results, flask_fastapi_results, openapi_capabilities,
             )
 
         # Override backend if forced
@@ -169,8 +189,9 @@ class AnalyzePhase(Phase):
         self, app_name: str, files: list, ipc_mechanisms: list, ast_results: dict,
         java_results: dict | None = None,
         flask_fastapi_results: dict | None = None,
+        openapi_capabilities: list | None = None,
     ) -> AnalysisResult:
-        """Generate AnalysisResult from AST/Java/Flask/FastAPI analysis without LLM."""
+        """Generate AnalysisResult from AST/Java/Flask/FastAPI/OpenAPI analysis without LLM."""
         primary_ipc = None
         if ipc_mechanisms:
             primary_ipc = max(ipc_mechanisms, key=lambda m: m.confidence).ipc_type
@@ -196,6 +217,15 @@ class AnalyzePhase(Phase):
         if flask_fastapi_results:
             ff_caps = flask_fastapi_results_to_capabilities(flask_fastapi_results)
             capabilities.extend(ff_caps)
+
+        # Add OpenAPI capabilities
+        if openapi_capabilities:
+            # Deduplicate: skip OpenAPI endpoints already found by source analysis
+            existing_names = {c.name for c in capabilities}
+            for cap in openapi_capabilities:
+                if cap.name not in existing_names:
+                    capabilities.append(cap)
+                    existing_names.add(cap.name)
 
         # If AST found nothing, fall back to generic capability
         if not capabilities:

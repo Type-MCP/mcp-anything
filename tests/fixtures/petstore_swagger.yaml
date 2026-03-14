@@ -1,0 +1,74 @@
+swagger: "2.0"
+info:
+  title: Petstore (Swagger 2)
+  version: "1.0"
+host: "localhost:9090"
+basePath: "/api"
+schemes:
+  - http
+paths:
+  /animals:
+    get:
+      operationId: listAnimals
+      summary: List all animals
+      parameters:
+        - name: type
+          in: query
+          type: string
+          description: Filter by animal type
+        - name: page
+          in: query
+          type: integer
+          default: 1
+      responses:
+        200:
+          description: A list of animals
+    post:
+      operationId: createAnimal
+      summary: Create an animal
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Animal"
+      responses:
+        201:
+          description: Animal created
+  /animals/{id}:
+    get:
+      operationId: getAnimal
+      summary: Get animal by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        200:
+          description: An animal
+    delete:
+      operationId: deleteAnimal
+      summary: Delete an animal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        204:
+          description: Deleted
+definitions:
+  Animal:
+    type: object
+    required:
+      - name
+    properties:
+      name:
+        type: string
+        description: Animal name
+      species:
+        type: string
+      weight:
+        type: number
+        description: Weight in kg
