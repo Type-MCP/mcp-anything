@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-anything"
+version = "0.1.0"
+description = "Auto-generate MCP servers from any scriptable application's source code"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "pydantic>=2.0",
+    "jinja2>=3.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+mcp-anything = "mcp_anything.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_anything"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

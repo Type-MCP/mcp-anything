@@ -1,0 +1,20 @@
+"""Resources for {{ design.server_name }}."""
+
+from mcp.server.fastmcp import FastMCP
+
+
+def register_resources(server: FastMCP{% if design.backend %}, backend{% endif %}) -> None:
+    """Register resources with the server."""
+
+{% for resource in design.resources %}
+    @server.resource("{{ resource.uri }}")
+    async def {{ resource.name | snake_case }}() -> str:
+        """{{ resource.description | safe_docstring }}"""
+    {% if design.backend %}
+        return await backend.query("{{ resource.uri }}")
+    {% else %}
+        # TODO: Implement this resource
+        return "{}"
+    {% endif %}
+
+{% endfor %}

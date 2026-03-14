@@ -1,0 +1,32 @@
+"""MCP server for {{ design.server_name }}."""
+
+from mcp.server.fastmcp import FastMCP
+
+server = FastMCP("{{ design.server_name }}")
+
+{% if design.backend %}
+from {{ package_name }}.backend import Backend
+
+_backend = Backend()
+{% endif %}
+
+# Import and register tool modules
+{% for module_name in design.tool_modules %}
+from {{ package_name }}.tools.{{ module_name }} import register_tools as register_{{ module_name }}_tools
+register_{{ module_name }}_tools(server{% if design.backend %}, _backend{% endif %})
+{% endfor %}
+
+{% if design.resources %}
+# Import and register resources
+from {{ package_name }}.resources import register_resources
+register_resources(server{% if design.backend %}, _backend{% endif %})
+{% endif %}
+
+
+def main():
+    """Run the MCP server."""
+    server.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

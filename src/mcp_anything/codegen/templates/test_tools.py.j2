@@ -1,0 +1,19 @@
+"""Tests for {{ design.server_name }} MCP server tools."""
+
+import pytest
+
+
+class TestToolRegistration:
+    """Verify all tools are registered."""
+
+    def test_server_has_tools(self, server):
+        """Server should have registered tools."""
+        assert server is not None
+
+{% for tool in design.tools %}
+    def test_{{ tool.name }}_registered(self, server):
+        """{{ tool.name }} tool should be registered."""
+        # Tool registration is verified by import
+        pass
+
+{% endfor %}

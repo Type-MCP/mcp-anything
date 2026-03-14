@@ -1,0 +1,32 @@
+"""CLI configuration model."""
+
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class CLIOptions(BaseModel):
+    """Options parsed from CLI arguments."""
+
+    codebase_path: Path
+    output_dir: Optional[Path] = None
+    name: Optional[str] = None
+    backend: Optional[str] = None
+    phases: Optional[list[str]] = None
+    resume: bool = False
+    no_llm: bool = False
+    no_install: bool = False
+    verbose: bool = False
+
+    def resolved_name(self) -> str:
+        """Server name derived from codebase directory or override."""
+        if self.name:
+            return self.name
+        return self.codebase_path.resolve().name.lower().replace(" ", "-")
+
+    def resolved_output_dir(self) -> Path:
+        """Output directory, defaulting to ./mcp-<name>-server."""
+        if self.output_dir:
+            return self.output_dir
+        return Path(f"./mcp-{self.resolved_name()}-server")

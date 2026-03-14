@@ -1,0 +1,373 @@
+"""Phase 2: DESIGN — transform AnalysisResult into ServerDesign."""
+
+import json
+import re
+from typing import Optional
+
+from mcp_anything.models.analysis import AnalysisResult, Capability, IPCType, ParameterSpec
+from mcp_anything.models.design import BackendConfig, ResourceSpec, ServerDesign, ToolImpl, ToolSpec
+from mcp_anything.pipeline.context import PipelineContext
+from mcp_anything.pipeline.phase import Phase
+
+
+def _to_snake_case(name: str) -> str:
+    """Convert a string to snake_case."""
+    s = re.sub(r"[^a-zA-Z0-9]", "_", name)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s)
+    s = re.sub(r"([a-z\d])([A-Z])", r"\1_\2", s)
+    return re.sub(r"_+", "_", s).strip("_").lower()
+
+
+def _capability_to_tool(cap: Capability, primary_ipc: Optional[IPCType] = None) -> ToolSpec:
+    """Convert an analysis Capability to a design ToolSpec."""
+    impl = _build_tool_impl(cap, primary_ipc or cap.ipc_type)
+    return ToolSpec(
+        name=_to_snake_case(cap.name),
+        description=cap.description,
+        parameters=cap.parameters,
+        return_type=cap.return_type,
+        module=cap.category,
+        ipc_type=cap.ipc_type,
+        implementation_hint=f"Source: {cap.source_file}::{cap.source_function}"
+        if cap.source_function
+        else f"Source: {cap.source_file}",
+        impl=impl,
+    )
+
+
+def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
+    """Determine the best implementation strategy for a capability."""
+    # CLI subcommand: capability came from argparse add_parser detection
+    if cap.category == "cli_command" and ipc_type == IPCType.CLI:
+        arg_mapping = {}
+        for p in cap.parameters:
+            # The generic "args" param from subcommand detection is positional
+            if p.name == "args":
+                arg_mapping[p.name] = {"style": "passthrough"}
+            else:
+                arg_mapping[p.name] = {"style": "flag", "flag": f"--{p.name.replace('_', '-')}"}
+        return ToolImpl(
+            strategy="cli_subcommand",
+            cli_subcommand=cap.name,
+            arg_mapping=arg_mapping,
+        )
+
+    # Python callable: we know the source file and function
+    if cap.source_file and cap.source_function:
+        # Build arg mapping — for CLI backends, map params to flags
+        arg_mapping = {}
+        for i, p in enumerate(cap.parameters):
+            if p.required and not p.default:
+                arg_mapping[p.name] = {"style": "positional", "position": i}
+            else:
+                arg_mapping[p.name] = {"style": "flag", "flag": f"--{p.name.replace('_', '-')}"}
+
+        if ipc_type == IPCType.PYTHON_API or ipc_type is None:
+            # Direct Python import + call
+            module_path = cap.source_file.replace("/", ".").removesuffix(".py")
+            return ToolImpl(
+                strategy="python_call",
+                python_module=module_path,
+                python_function=cap.source_function,
+                python_import_path=cap.source_file,
+                arg_mapping=arg_mapping,
+            )
+        elif ipc_type == IPCType.CLI:
+            # Wrap as CLI call — invoke the entry point with subcommand-style args
+            return ToolImpl(
+                strategy="cli_function",
+                cli_entry=cap.source_file,
+                python_function=cap.source_function,
+                arg_mapping=arg_mapping,
+            )
+
+    return ToolImpl(strategy="stub")
+
+
+def _group_tools(tools: list[ToolSpec]) -> dict[str, list[str]]:
+    """Group tool names by module/category."""
+    modules: dict[str, list[str]] = {}
+    for tool in tools:
+        module = tool.module or "general"
+        modules.setdefault(module, []).append(tool.name)
+    return modules
+
+
+def _build_backend_config(analysis: AnalysisResult, codebase_path: str = "") -> Optional[BackendConfig]:
+    """Create backend configuration from analysis results."""
+    ipc_type = analysis.primary_ipc
+    if not ipc_type:
+        return None
+
+    config = BackendConfig(backend_type=ipc_type, codebase_path=codebase_path)
+
+    # For CLI apps, try to find the entry point command
+    if ipc_type == IPCType.CLI:
+        if analysis.entry_points:
+            config.command = f"python {analysis.entry_points[0]}"
+        else:
+            # Fallback: find a Python file that likely has a main() or __main__ block
+            for cap in analysis.capabilities:
+                if cap.source_file and cap.source_file.endswith(".py"):
+                    config.command = f"python {cap.source_file}"
+                    break
+
+    # Extract details from IPC mechanisms
+    for mech in analysis.ipc_mechanisms:
+        if mech.ipc_type == ipc_type:
+            if "port" in mech.details:
+                config.port = int(mech.details["port"])
+            if "protocol" in mech.details:
+                config.env_vars["PROTOCOL"] = mech.details["protocol"]
+            break
+
+    return config
+
+
+def _generate_resources(analysis: AnalysisResult) -> list[ResourceSpec]:
+    """Generate standard resource specs based on the application type."""
+    resources = [
+        ResourceSpec(
+            uri=f"app://{analysis.app_name}/status",
+            name=f"{analysis.app_name}_status",
+            description=f"Current status of {analysis.app_name}",
+        ),
+    ]
+
+    # Add category-based resources
+    categories = {cap.category for cap in analysis.capabilities}
+    for category in sorted(categories):
+        if category != "general":
+            resources.append(
+                ResourceSpec(
+                    uri=f"app://{analysis.app_name}/{category}",
+                    name=f"{analysis.app_name}_{category}",
+                    description=f"Information about {category} in {analysis.app_name}",
+                )
+            )
+
+    return resources
+
+
+async def _llm_design(analysis: AnalysisResult) -> Optional[ServerDesign]:
+    """Use Claude API for design decisions."""
+    try:
+        import anthropic
+    except ImportError:
+        return None
+
+    caps_summary = json.dumps(
+        [{"name": c.name, "description": c.description, "category": c.category} for c in analysis.capabilities],
+        indent=2,
+    )
+
+    prompt = f"""Given these capabilities for "{analysis.app_name}":
+
+{caps_summary}
+
+Suggest:
+1. How to group these into tool modules (JSON object: module_name -> [tool_names])
+2. What MCP resources to expose (JSON array: [{{"uri", "name", "description"}}])
+
+Return JSON with "tool_modules" and "resources" keys only."""
+
+    try:
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0]
+        return json.loads(text)
+    except Exception:
+        return None
+
+
+def _detect_target_install(codebase_path) -> str:
+    """Detect how to install the target project's dependencies."""
+    from pathlib import Path
+
+    root = Path(codebase_path)
+
+    # Check for pyproject.toml
+    if (root / "pyproject.toml").exists():
+        return f"pip install -e {root}"
+    # Check for setup.py
+    if (root / "setup.py").exists():
+        return f"pip install -e {root}"
+    # Check for setup.cfg
+    if (root / "setup.cfg").exists():
+        return f"pip install -e {root}"
+    # Check for requirements.txt
+    if (root / "requirements.txt").exists():
+        return f"pip install -r {root / 'requirements.txt'}"
+    return ""
+
+
+def _make_run_cli_tool(analysis: AnalysisResult) -> Optional[ToolSpec]:
+    """Create a 'run' tool for single-purpose CLI apps.
+
+    When a CLI app has no subcommands and few detected tools, the most useful
+    tool is often just "run the CLI with arguments" (e.g., `httpstat <URL>`).
+    """
+    if analysis.primary_ipc != IPCType.CLI:
+        return None
+
+    app_name = _to_snake_case(analysis.app_name)
+    entry = analysis.entry_points[0] if analysis.entry_points else None
+    # Fallback: find the first Python file that looks like a main script
+    if not entry:
+        for cap in analysis.capabilities:
+            if cap.source_file and cap.source_file.endswith(".py"):
+                entry = cap.source_file
+                break
+    if not entry:
+        return None
+
+    description = f"Run {analysis.app_name} with the given command-line arguments"
+
+    return ToolSpec(
+        name=f"run_{app_name}",
+        description=description,
+        parameters=[
+            ParameterSpec(
+                name="args",
+                type="string",
+                description=f"Command-line arguments to pass to {analysis.app_name} (e.g. a URL or flags)",
+                required=True,
+            ),
+        ],
+        return_type="string",
+        module="general",
+        ipc_type=IPCType.CLI,
+        implementation_hint=f"Run: python {entry} <args>",
+        impl=ToolImpl(
+            strategy="cli_subcommand",
+            cli_subcommand="",  # empty = no subcommand, just pass args
+            arg_mapping={"args": {"style": "passthrough"}},
+        ),
+    )
+
+
+async def _enhance_descriptions_with_llm(
+    tools: list[ToolSpec], app_name: str
+) -> list[ToolSpec]:
+    """Use Claude to rewrite tool descriptions to be more useful for AI agents."""
+    try:
+        import anthropic
+    except ImportError:
+        return tools
+
+    tool_summaries = []
+    for t in tools:
+        params = ", ".join(f"{p.name}: {p.type}" for p in t.parameters)
+        tool_summaries.append(f"- {t.name}({params}): {t.description}")
+
+    prompt = f"""You are improving tool descriptions for an MCP server wrapping "{app_name}".
+These descriptions will be read by an AI assistant to decide which tool to call.
+
+Current tools:
+{chr(10).join(tool_summaries)}
+
+For each tool, write a concise, action-oriented description (1 sentence, max 100 chars) that clearly explains what the tool does.
+
+Return a JSON object mapping tool name to new description. Only include tools whose descriptions you improved.
+Example: {{"tool_name": "Better description here"}}"""
+
+    try:
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+
+        improvements = json.loads(text)
+
+        for tool in tools:
+            if tool.name in improvements and isinstance(improvements[tool.name], str):
+                tool.description = improvements[tool.name]
+    except Exception:
+        pass  # Silently fall back to original descriptions
+
+    return tools
+
+
+class DesignPhase(Phase):
+    @property
+    def name(self) -> str:
+        return "design"
+
+    def validate_preconditions(self, ctx: PipelineContext) -> list[str]:
+        if not ctx.manifest.analysis:
+            return ["Analysis phase must complete before design"]
+        return []
+
+    async def execute(self, ctx: PipelineContext) -> None:
+        analysis = ctx.manifest.analysis
+        assert analysis is not None
+        console = ctx.console
+
+        # Convert capabilities to tool specs
+        tools = [_capability_to_tool(cap, analysis.primary_ipc) for cap in analysis.capabilities]
+
+        # For single-purpose CLI apps with few tools, add a "run" tool
+        has_subcommands = any(cap.category == "cli_command" for cap in analysis.capabilities)
+        if not has_subcommands and len(tools) < 5 and analysis.primary_ipc == IPCType.CLI:
+            run_tool = _make_run_cli_tool(analysis)
+            if run_tool:
+                tools.insert(0, run_tool)
+
+        console.print(f"    Designed {len(tools)} tools")
+
+        # Enhance descriptions with LLM
+        if not ctx.options.no_llm:
+            tools = await _enhance_descriptions_with_llm(tools, analysis.app_name)
+
+        # Group tools into modules
+        tool_modules = _group_tools(tools)
+
+        # Generate resources
+        resources = _generate_resources(analysis)
+        console.print(f"    Designed {len(resources)} resources")
+
+        # Try LLM-assisted grouping
+        if not ctx.options.no_llm:
+            llm_result = await _llm_design(analysis)
+            if llm_result and isinstance(llm_result, dict):
+                if "tool_modules" in llm_result:
+                    tool_modules = llm_result["tool_modules"]
+                if "resources" in llm_result:
+                    resources = [
+                        ResourceSpec(**r) for r in llm_result["resources"]
+                        if isinstance(r, dict) and "uri" in r and "name" in r
+                    ]
+
+        # Build backend config
+        backend = _build_backend_config(analysis, ctx.manifest.codebase_path)
+
+        # Detect target project install hint
+        target_install_hint = _detect_target_install(ctx.codebase_path)
+        if target_install_hint:
+            console.print(f"    Target install: {target_install_hint}")
+
+        design = ServerDesign(
+            server_name=analysis.app_name,
+            server_description=analysis.app_description,
+            tools=tools,
+            resources=resources,
+            tool_modules=tool_modules,
+            backend=backend,
+            target_install_hint=target_install_hint,
+        )
+
+        ctx.manifest.design = design

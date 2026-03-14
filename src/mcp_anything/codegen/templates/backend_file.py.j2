@@ -1,0 +1,28 @@
+"""File-based backend for {{ design.server_name }}."""
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+class Backend:
+    """Communicates with {{ design.server_name }} via file I/O."""
+
+    def __init__(self) -> None:
+        self.workspace = Path("{{ design.backend.env_vars.get('WORKSPACE', '.') }}")
+
+    async def execute(self, tool_name: str, **kwargs: Any) -> str:
+        """Execute a file-based operation."""
+        # Write command to input file
+        cmd_file = self.workspace / ".mcp_command.json"
+        cmd_file.write_text(json.dumps({"method": tool_name, "params": kwargs}))
+
+        # Read result from output file
+        result_file = self.workspace / ".mcp_result.json"
+        if result_file.exists():
+            return result_file.read_text()
+        return "{}"
+
+    async def query(self, uri: str) -> str:
+        """Query a resource via file."""
+        return await self.execute("query", uri=uri)

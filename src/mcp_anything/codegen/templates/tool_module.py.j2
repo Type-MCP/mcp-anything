@@ -1,0 +1,73 @@
+"""{{ module_name }} tools for {{ design.server_name }}."""
+
+from mcp.server.fastmcp import FastMCP
+
+
+def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -> None:
+    """Register {{ module_name }} tools with the server."""
+
+{% for tool in tools %}
+    @server.tool()
+    async def {{ tool.name }}(
+    {% for param in tool.parameters %}
+    {% if param.required %}
+        {{ param.name }}: {{ param.type | python_type }},
+    {% else %}
+        {{ param.name }}: {{ param.type | python_type }} | None = {{ param | default_value }},
+    {% endif %}
+    {% endfor %}
+    ) -> str:
+        """{{ tool.description | safe_docstring }}"""
+    {% if tool.impl.strategy == "cli_subcommand" %}
+        # Run CLI subcommand: {{ tool.impl.cli_subcommand }}
+        cmd_args: list[str] = []
+        {% for param in tool.parameters %}
+        {% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "passthrough" %}
+        if {{ param.name }}:
+            cmd_args.extend({{ param.name }}.split())
+        {% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "flag" %}
+        if {{ param.name }} is not None:
+            cmd_args.extend(["{{ tool.impl.arg_mapping[param.name]['flag'] }}", str({{ param.name }})])
+        {% else %}
+        if {{ param.name }} is not None:
+            cmd_args.append(str({{ param.name }}))
+        {% endif %}
+        {% endfor %}
+        return await backend.run_subcommand("{{ tool.impl.cli_subcommand }}", cmd_args)
+    {% elif tool.impl.strategy == "cli_function" %}
+        # Call function via CLI backend: {{ tool.impl.cli_entry }}::{{ tool.impl.python_function }}
+        return await backend.run_function_as_cli(
+            "{{ tool.impl.cli_entry }}",
+            "{{ tool.impl.python_function }}",
+        {% for param in tool.parameters %}
+            {{ param.name }}={{ param.name }},
+        {% endfor %}
+        )
+    {% elif tool.impl.strategy == "python_call" %}
+        # Direct Python call: {{ tool.impl.python_module }}.{{ tool.impl.python_function }}
+        import sys
+        from pathlib import Path
+        codebase = Path("{{ design.backend.codebase_path if design.backend else '' }}")
+        if str(codebase) not in sys.path:
+            sys.path.insert(0, str(codebase))
+        from {{ tool.impl.python_module }} import {{ tool.impl.python_function }}
+        result = {{ tool.impl.python_function }}(
+        {% for param in tool.parameters %}
+            {% if param.required %}
+            {{ param.name }}={{ param.name }},
+            {% else %}
+            **({"{{ param.name }}": {{ param.name }}} if {{ param.name }} is not None else {}),
+            {% endif %}
+        {% endfor %}
+        )
+        return str(result)
+    {% else %}
+        # Stub — implementation not yet generated
+        {% if design.backend %}
+        return await backend.run_subcommand("{{ tool.name }}")
+        {% else %}
+        raise NotImplementedError("{{ tool.name }} not yet implemented")
+        {% endif %}
+    {% endif %}
+
+{% endfor %}

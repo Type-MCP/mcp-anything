@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-{{ design.server_name | kebab_case }}-server"
+version = "0.1.0"
+description = "{{ design.server_description | safe_docstring }}"
+requires-python = "{{ design.python_requires }}"
+dependencies = [
+{% for dep in design.dependencies %}
+    "{{ dep }}",
+{% endfor %}
+]
+
+[project.scripts]
+mcp-{{ design.server_name | kebab_case }} = "{{ package_name }}.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{ package_name }}"]
+
+{% if design.target_install_hint %}
+# NOTE: This MCP server calls into the target application.
+# You must also install the target project's dependencies:
+#   {{ design.target_install_hint }}
+{% endif %}

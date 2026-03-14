@@ -1,0 +1,18 @@
+"""Data models for {{ design.server_name }} MCP server."""
+
+from dataclasses import dataclass
+from typing import Any
+
+
+{% for tool in design.tools %}
+{% if tool.parameters %}
+@dataclass
+class {{ tool.name | pascal_case }}Params:
+    """Parameters for {{ tool.name }}."""
+    {% for param in tool.parameters %}
+    {{ param.name }}: {{ param.type | python_type }}{% if not param.required %} | None = None{% endif %}
+
+    {% endfor %}
+
+{% endif %}
+{% endfor %}

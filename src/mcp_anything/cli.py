@@ -1,0 +1,103 @@
+"""CLI entry point for mcp-anything."""
+
+import argparse
+import asyncio
+import sys
+from pathlib import Path
+
+from rich.console import Console
+
+from mcp_anything import __version__
+from mcp_anything.config import CLIOptions
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mcp-anything",
+        description="Auto-generate MCP servers from any scriptable application's source code.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # generate
+    gen = subparsers.add_parser("generate", help="Run full 6-phase generation pipeline")
+    gen.add_argument("codebase_path", type=Path, help="Path to the application source code")
+    gen.add_argument("-o", "--output-dir", type=Path, help="Output directory")
+    gen.add_argument("--name", help="Override server name")
+    gen.add_argument(
+        "--backend",
+        choices=["socket", "cli", "file", "python-api", "protocol"],
+        help="Force backend type (default: auto-detect)",
+    )
+    gen.add_argument("--phases", help="Comma-separated phases to run (e.g. analyze,design)")
+    gen.add_argument("--resume", action="store_true", help="Resume from saved manifest")
+    gen.add_argument("--no-llm", action="store_true", help="Disable Claude API analysis")
+    gen.add_argument("--no-install", action="store_true", help="Skip auto-installing dependencies")
+    gen.add_argument("-v", "--verbose", action="store_true")
+
+    # analyze
+    ana = subparsers.add_parser("analyze", help="Run analysis phase only")
+    ana.add_argument("codebase_path", type=Path)
+    ana.add_argument("--no-llm", action="store_true")
+    ana.add_argument("-v", "--verbose", action="store_true")
+
+    # design
+    des = subparsers.add_parser("design", help="Run analysis + design phases")
+    des.add_argument("codebase_path", type=Path)
+    des.add_argument("--no-llm", action="store_true")
+    des.add_argument("-v", "--verbose", action="store_true")
+
+    # status
+    sta = subparsers.add_parser("status", help="Show manifest state for an output directory")
+    sta.add_argument("output_dir", type=Path)
+
+    return parser
+
+
+def parse_options(args: argparse.Namespace) -> CLIOptions:
+    """Convert parsed args to CLIOptions."""
+    return CLIOptions(
+        codebase_path=args.codebase_path,
+        output_dir=getattr(args, "output_dir", None),
+        name=getattr(args, "name", None),
+        backend=getattr(args, "backend", None),
+        phases=args.phases.split(",") if getattr(args, "phases", None) else None,
+        resume=getattr(args, "resume", False),
+        no_llm=getattr(args, "no_llm", False),
+        no_install=getattr(args, "no_install", False),
+        verbose=getattr(args, "verbose", False),
+    )
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    console = Console()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    if args.command == "status":
+        from mcp_anything.pipeline.engine import show_status
+
+        show_status(args.output_dir, console)
+        return
+
+    options = parse_options(args)
+
+    if not options.codebase_path.exists():
+        console.print(f"[red]Error:[/red] Codebase path does not exist: {options.codebase_path}")
+        sys.exit(1)
+
+    # Determine which phases to run
+    if args.command == "analyze":
+        options.phases = ["analyze"]
+    elif args.command == "design":
+        options.phases = ["analyze", "design"]
+
+    from mcp_anything.pipeline.engine import PipelineEngine
+
+    engine = PipelineEngine(options, console)
+    asyncio.run(engine.run())

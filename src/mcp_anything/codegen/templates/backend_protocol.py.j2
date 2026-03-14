@@ -1,0 +1,36 @@
+"""Protocol backend for {{ design.server_name }}."""
+
+import asyncio
+import json
+from typing import Any
+
+
+class Backend:
+    """Communicates with {{ design.server_name }} via {{ design.backend.env_vars.get('PROTOCOL', 'custom') }} protocol."""
+
+    def __init__(self) -> None:
+        self.host = "{{ design.backend.host or 'localhost' }}"
+        self.port = {{ design.backend.port or 0 }}
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Establish protocol connection."""
+        # TODO: Implement protocol-specific connection
+        self._connected = True
+
+    async def disconnect(self) -> None:
+        """Close the connection."""
+        self._connected = False
+
+    async def execute(self, tool_name: str, **kwargs: Any) -> str:
+        """Send a command via the protocol."""
+        if not self._connected:
+            await self.connect()
+
+        # TODO: Implement protocol-specific message sending
+        message = json.dumps({"method": tool_name, "params": kwargs})
+        return message
+
+    async def query(self, uri: str) -> str:
+        """Query a resource via protocol."""
+        return await self.execute("query", uri=uri)
