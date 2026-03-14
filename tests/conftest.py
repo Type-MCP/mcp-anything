@@ -16,5 +16,10 @@ def fake_cli_app(fixtures_dir) -> Path:
 
 
 @pytest.fixture
+def fake_spring_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_spring_app"
+
+
+@pytest.fixture
 def tmp_output(tmp_path) -> Path:
     return tmp_path / "output"

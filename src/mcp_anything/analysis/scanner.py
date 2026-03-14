@@ -6,9 +6,11 @@ from pathlib import Path
 from mcp_anything.models.analysis import FileInfo, Language
 
 _NAME_MAIN_RE = re.compile(r'''if\s+__name__\s*==\s*['"]__main__['"]\s*:''')
+_SPRING_BOOT_APP_RE = re.compile(r'@SpringBootApplication')
 
 EXTENSION_MAP: dict[str, Language] = {
     ".py": Language.PYTHON,
+    ".java": Language.JAVA,
     ".c": Language.C,
     ".h": Language.C,
     ".cpp": Language.CPP,
@@ -31,8 +33,13 @@ SKIP_DIRS = {
     ".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "venv",
     ".tox", ".eggs", "dist", "build", ".mypy_cache", ".pytest_cache",
     "test", "tests", "testing", "test_data", "testdata", "fixtures",
-    "examples", "example", "docs", "doc", "benchmarks", "bench",
+    "examples", "docs", "doc", "benchmarks", "bench",
+    # Java/Maven/Gradle
+    "target", ".gradle", ".mvn", "bin", "out",
 }
+
+# Only skip these at the first two directory levels (not deep in package paths)
+_SHALLOW_SKIP_ONLY = {"test", "tests", "examples"}
 
 SKIP_FILES = {
     "setup.py", "conftest.py", "noxfile.py", "fabfile.py",
@@ -42,6 +49,8 @@ SKIP_FILES = {
 ENTRY_POINT_PATTERNS = {
     "__main__.py", "main.py", "cli.py", "app.py", "server.py",
     "main.c", "main.cpp", "main.go", "main.rs", "index.js", "index.ts",
+    # Java Spring Boot
+    "Application.java",
 }
 
 
@@ -63,7 +72,16 @@ def scan_codebase(root: Path, max_files: int = 5000) -> list[FileInfo]:
     for item in sorted(root.rglob("*")):
         # Only check directory components *below* the scan root
         relative_parts = item.parts[root_depth:]
-        if any(part in SKIP_DIRS for part in relative_parts):
+        skip = False
+        for i, part in enumerate(relative_parts):
+            if part in SKIP_DIRS:
+                # Some dirs (test, tests, examples) are only skipped near the root,
+                # not deep in package paths like com/example/ or src/test/
+                if part in _SHALLOW_SKIP_ONLY and i >= 2:
+                    continue
+                skip = True
+                break
+        if skip:
             continue
         if not item.is_file():
             continue
@@ -86,6 +104,8 @@ def scan_codebase(root: Path, max_files: int = 5000) -> list[FileInfo]:
         # Detect entry point by filename or by `if __name__ == '__main__':` guard
         entry = is_entry_point(item)
         if not entry and lang == Language.PYTHON and _NAME_MAIN_RE.search(content):
+            entry = True
+        if not entry and lang == Language.JAVA and _SPRING_BOOT_APP_RE.search(content):
             entry = True
 
         rel_path = str(item.relative_to(root))

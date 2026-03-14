@@ -5,6 +5,10 @@ from mcp_anything.analysis.ast_analyzer import (
     ast_results_to_capabilities,
 )
 from mcp_anything.analysis.detectors import ALL_DETECTORS
+from mcp_anything.analysis.java_analyzer import (
+    analyze_java_file,
+    java_results_to_capabilities,
+)
 from mcp_anything.analysis.llm_analyzer import llm_analyze
 from mcp_anything.analysis.scanner import scan_codebase
 from mcp_anything.models.analysis import (
@@ -70,6 +74,24 @@ class AnalyzePhase(Phase):
             f"{cli_count} CLI commands, {subcmd_count} subcommands"
         )
 
+        # 3a. Java/Spring Boot analysis
+        java_results = {}
+        for fi in files:
+            if fi.language == Language.JAVA:
+                jresult = analyze_java_file(root, fi)
+                if jresult and (jresult.endpoints or jresult.has_spring_boot):
+                    java_results[fi.path] = jresult
+                    if jresult.endpoints:
+                        fi.is_api_surface = True
+
+        if java_results:
+            endpoint_count = sum(len(r.endpoints) for r in java_results.values())
+            controller_count = sum(len(r.controllers) for r in java_results.values())
+            console.print(
+                f"    Java: {endpoint_count} REST endpoints, "
+                f"{controller_count} controllers"
+            )
+
         # 3b. For non-Python or thin codebases, try --help parsing
         ast_cap_count = sum(
             len(r.functions) + len(r.cli_commands) for r in ast_results.values()
@@ -106,7 +128,8 @@ class AnalyzePhase(Phase):
             result = llm_result
         else:
             result = self._ast_fallback(
-                ctx.manifest.server_name, files, all_mechanisms, ast_results
+                ctx.manifest.server_name, files, all_mechanisms, ast_results,
+                java_results,
             )
 
         # Override backend if forced
@@ -123,9 +146,10 @@ class AnalyzePhase(Phase):
         ctx.manifest.analysis = result
 
     def _ast_fallback(
-        self, app_name: str, files: list, ipc_mechanisms: list, ast_results: dict
+        self, app_name: str, files: list, ipc_mechanisms: list, ast_results: dict,
+        java_results: dict | None = None,
     ) -> AnalysisResult:
-        """Generate AnalysisResult from AST analysis without LLM."""
+        """Generate AnalysisResult from AST/Java analysis without LLM."""
         primary_ipc = None
         if ipc_mechanisms:
             primary_ipc = max(ipc_mechanisms, key=lambda m: m.confidence).ipc_type
@@ -134,6 +158,11 @@ class AnalyzePhase(Phase):
 
         # Generate capabilities from AST results
         capabilities = ast_results_to_capabilities(ast_results, primary_ipc)
+
+        # Add Java/Spring Boot capabilities
+        if java_results:
+            java_caps = java_results_to_capabilities(java_results)
+            capabilities.extend(java_caps)
 
         # If AST found nothing, fall back to generic capability
         if not capabilities:

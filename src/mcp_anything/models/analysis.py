@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class Language(str, Enum):
     PYTHON = "python"
+    JAVA = "java"
     C = "c"
     CPP = "cpp"
     RUST = "rust"

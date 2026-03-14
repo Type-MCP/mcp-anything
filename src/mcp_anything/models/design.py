@@ -10,7 +10,7 @@ from mcp_anything.models.analysis import IPCType, ParameterSpec
 class ToolImpl(BaseModel):
     """How to actually call the underlying application for this tool."""
 
-    strategy: str = "stub"  # "cli_subcommand", "cli_function", "python_call", "stub"
+    strategy: str = "stub"  # "cli_subcommand", "cli_function", "python_call", "http_call", "stub"
     # For cli_subcommand: the subcommand name to pass to the app binary
     cli_subcommand: str = ""
     # For cli_function: the source file + function that wraps into a CLI call
@@ -19,6 +19,9 @@ class ToolImpl(BaseModel):
     python_module: str = ""
     python_function: str = ""
     python_import_path: str = ""
+    # For http_call: HTTP method and path
+    http_method: str = ""  # GET, POST, PUT, DELETE, PATCH
+    http_path: str = ""    # e.g. /api/users/{id}
     # Mapping of tool param names to CLI argument forms
     # e.g. {"input_path": {"position": 0}, "format": {"flag": "--format"}}
     arg_mapping: dict[str, dict] = Field(default_factory=dict)

@@ -79,12 +79,20 @@ class Emitter:
         if not self.design.backend:
             return
         backend_type = self.design.backend.backend_type.value
+        # Check if this is an HTTP/REST backend (Spring Boot, etc.)
+        is_http = False
+        if self.design.backend.env_vars.get("PROTOCOL") == "http":
+            is_http = True
+        # Also check if any tools use http_call strategy
+        if any(t.impl.strategy == "http_call" for t in self.design.tools):
+            is_http = True
+
         template_map = {
             "socket": "backend_socket.py.j2",
             "cli": "backend_cli.py.j2",
             "file": "backend_file.py.j2",
             "python-api": "backend_api.py.j2",
-            "protocol": "backend_protocol.py.j2",
+            "protocol": "backend_http.py.j2" if is_http else "backend_protocol.py.j2",
         }
         template_name = template_map.get(backend_type)
         if template_name:

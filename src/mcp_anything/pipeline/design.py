@@ -37,6 +37,33 @@ def _capability_to_tool(cap: Capability, primary_ipc: Optional[IPCType] = None) 
 
 def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
     """Determine the best implementation strategy for a capability."""
+    # HTTP endpoint: capability came from Spring Boot / REST analysis
+    if cap.category == "api" and cap.ipc_type == IPCType.PROTOCOL:
+        # Parse HTTP method and path from description: "GET /api/users - ..."
+        http_method = "GET"
+        http_path = "/"
+        if cap.description and " " in cap.description:
+            parts = cap.description.split(" ", 2)
+            if parts[0] in ("GET", "POST", "PUT", "DELETE", "PATCH"):
+                http_method = parts[0]
+                http_path = parts[1].rstrip(" -")
+
+        arg_mapping = {}
+        for p in cap.parameters:
+            if "{" + p.name + "}" in http_path:
+                arg_mapping[p.name] = {"style": "path"}
+            elif p.type == "object":
+                arg_mapping[p.name] = {"style": "body"}
+            else:
+                arg_mapping[p.name] = {"style": "query"}
+
+        return ToolImpl(
+            strategy="http_call",
+            http_method=http_method,
+            http_path=http_path,
+            arg_mapping=arg_mapping,
+        )
+
     # CLI subcommand: capability came from argparse add_parser detection
     if cap.category == "cli_command" and ipc_type == IPCType.CLI:
         arg_mapping = {}
@@ -124,6 +151,8 @@ def _build_backend_config(analysis: AnalysisResult, codebase_path: str = "") -> 
                 config.port = int(mech.details["port"])
             if "protocol" in mech.details:
                 config.env_vars["PROTOCOL"] = mech.details["protocol"]
+            if "framework" in mech.details:
+                config.env_vars["FRAMEWORK"] = mech.details["framework"]
             break
 
     return config
@@ -376,6 +405,11 @@ class DesignPhase(Phase):
         if target_install_hint:
             console.print(f"    Target install: {target_install_hint}")
 
+        # Add httpx dependency if any tool uses HTTP calls
+        dependencies = ["mcp>=1.0"]
+        if any(t.impl.strategy == "http_call" for t in tools):
+            dependencies.append("httpx>=0.27")
+
         design = ServerDesign(
             server_name=analysis.app_name,
             server_description=analysis.app_description,
@@ -383,6 +417,7 @@ class DesignPhase(Phase):
             resources=resources,
             tool_modules=tool_modules,
             backend=backend,
+            dependencies=dependencies,
             target_install_hint=target_install_hint,
         )
 

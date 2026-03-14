@@ -1,0 +1,61 @@
+"""HTTP backend for {{ design.server_name }}."""
+
+import json
+from typing import Any
+
+import httpx
+
+
+class Backend:
+    """Communicates with {{ design.server_name }} via HTTP REST API."""
+
+    def __init__(self) -> None:
+        self.base_url = "http://{{ design.backend.host }}:{{ design.backend.port }}"
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+        return self._client
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+        path_params: dict[str, str] | None = None,
+    ) -> str:
+        """Make an HTTP request to the target application.
+
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE, PATCH).
+            path: URL path, may contain {placeholders}.
+            params: Query parameters.
+            body: JSON request body.
+            path_params: Values for {placeholder} path segments.
+        """
+        # Substitute path parameters
+        if path_params:
+            for key, value in path_params.items():
+                path = path.replace("{" + key + "}", str(value))
+
+        client = await self._get_client()
+
+        response = await client.request(
+            method=method,
+            url=path,
+            params=params,
+            json=body if body else None,
+        )
+
+        # Try to return pretty JSON, fall back to text
+        try:
+            return json.dumps(response.json(), indent=2)
+        except Exception:
+            return response.text
+
+    async def query(self, uri: str) -> str:
+        """Query a resource by URI."""
+        # Map resource URIs to API calls
+        return await self.request("GET", "/")
