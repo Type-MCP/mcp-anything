@@ -1,0 +1,15 @@
+"""Server-delivered MCP prompts (skills) for {{ design.server_name }}."""
+
+from mcp.server.fastmcp import FastMCP
+
+
+def register_prompts(server: FastMCP) -> None:
+    """Register prompts with the server."""
+
+{% for prompt in design.prompts %}
+    @server.prompt("{{ prompt.name }}")
+    async def {{ prompt.name | snake_case }}_prompt({% for arg in prompt.arguments %}{{ arg.name }}: {{ arg.type | python_type }}{% if not arg.required %} = {{ arg.default | default('""', true) }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}) -> str:
+        """{{ prompt.description | safe_docstring }}"""
+        return """{{ prompt.template }}"""
+
+{% endfor %}

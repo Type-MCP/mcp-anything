@@ -1,0 +1,187 @@
+"""Socket backend for {{ design.server_name }}."""
+
+import asyncio
+import json
+import logging
+import os
+from typing import Any
+
+logger = logging.getLogger("{{ design.server_name }}")
+
+_ENV_PREFIX = "{{ design.server_name | upper | replace('-', '_') | replace(' ', '_') }}"
+_DEFAULT_TIMEOUT = 30
+_DEFAULT_MAX_RETRIES = 3
+
+
+class BackendError(Exception):
+    """Structured error from the socket backend."""
+
+    def __init__(
+        self,
+        message: str,
+        method: str = "",
+        response_body: str = "",
+    ) -> None:
+        self.method = method
+        self.response_body = response_body
+        super().__init__(message)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "error": str(self),
+            "method": self.method,
+            "response_body": self.response_body,
+        }
+
+
+class Backend:
+    """Communicates with {{ design.server_name }} via TCP/Unix socket (JSON-RPC messages)."""
+
+    def __init__(self) -> None:
+        self.host = os.environ.get(
+            f"{_ENV_PREFIX}_HOST",
+            "{{ design.backend.host or 'localhost' }}",
+        )
+        self.port = int(os.environ.get(
+            f"{_ENV_PREFIX}_PORT",
+            "{{ design.backend.port or 0 }}",
+        ))
+        {% if design.backend.socket_path %}
+        self.socket_path = os.environ.get(
+            f"{_ENV_PREFIX}_SOCKET_PATH",
+            "{{ design.backend.socket_path }}",
+        )
+        {% endif %}
+        self.timeout = float(os.environ.get(
+            f"{_ENV_PREFIX}_TIMEOUT", str(_DEFAULT_TIMEOUT),
+        ))
+        self.max_retries = int(os.environ.get(
+            f"{_ENV_PREFIX}_MAX_RETRIES", str(_DEFAULT_MAX_RETRIES),
+        ))
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._request_id = 0
+
+    async def connect(self) -> None:
+        """Establish connection to the application."""
+        try:
+            {% if design.backend.socket_path %}
+            self._reader, self._writer = await asyncio.open_unix_connection(self.socket_path)
+            {% else %}
+            self._reader, self._writer = await asyncio.open_connection(self.host, self.port)
+            {% endif %}
+        except Exception as exc:
+            {% if design.backend.socket_path %}
+            raise BackendError(f"Cannot connect to socket {self.socket_path}: {exc}") from exc
+            {% else %}
+            raise BackendError(f"Cannot connect to {self.host}:{self.port}: {exc}") from exc
+            {% endif %}
+
+    async def disconnect(self) -> None:
+        """Close the connection."""
+        if self._writer:
+            self._writer.close()
+            await self._writer.wait_closed()
+            self._writer = None
+            self._reader = None
+
+    async def _ensure_connected(self) -> None:
+        if self._writer is None or self._writer.is_closing():
+            await self.connect()
+
+    async def execute(self, method: str, **kwargs: Any) -> str:
+        """Send a JSON-RPC message and receive the response.
+
+        Sends a newline-delimited JSON message and reads the response line.
+
+        Args:
+            method: The method/command name to invoke.
+            **kwargs: Parameters to include in the message.
+        """
+        last_error: Exception | None = None
+
+        for attempt in range(self.max_retries):
+            try:
+                await self._ensure_connected()
+                assert self._reader and self._writer
+
+                self._request_id += 1
+                request = json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": method,
+                    "params": {k: v for k, v in kwargs.items() if v is not None},
+                    "id": self._request_id,
+                })
+                self._writer.write(request.encode() + b"\n")
+                await self._writer.drain()
+
+                raw = await asyncio.wait_for(
+                    self._reader.readline(), timeout=self.timeout,
+                )
+                response = raw.decode().strip()
+
+                if not response:
+                    raise BackendError(
+                        f"Empty response from {method}",
+                        method=method,
+                    )
+
+                # Try to parse as JSON-RPC response
+                try:
+                    data = json.loads(response)
+                    if "error" in data:
+                        err = data["error"]
+                        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                        raise BackendError(
+                            f"RPC error on {method}: {msg}",
+                            method=method,
+                            response_body=response[:1000],
+                        )
+                    if "result" in data:
+                        result = data["result"]
+                        return json.dumps(result, indent=2) if not isinstance(result, str) else result
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+                return response
+
+            except BackendError:
+                raise
+
+            except asyncio.TimeoutError:
+                last_error = BackendError(
+                    f"Socket request timed out after {self.timeout}s: {method}",
+                    method=method,
+                )
+                if attempt < self.max_retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Timeout on %s, retrying in %ds (attempt %d/%d)",
+                        method, wait, attempt + 1, self.max_retries,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise last_error
+
+            except Exception as exc:
+                self._writer = None
+                self._reader = None
+                last_error = BackendError(
+                    f"Socket error on {method}: {exc}",
+                    method=method,
+                )
+                if attempt < self.max_retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Socket error on %s, retrying in %ds (attempt %d/%d)",
+                        method, wait, attempt + 1, self.max_retries,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise last_error
+
+        raise last_error or BackendError(f"Request failed after {self.max_retries} attempts")
+
+    async def query(self, uri: str) -> str:
+        """Query a resource via socket."""
+        return await self.execute("query", uri=uri)

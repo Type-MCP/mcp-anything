@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-anything"
+version = "0.2.0rc1"
+description = "One command to turn any software into an MCP server"
+authors = [
+    { name = "Type-MCP", email = "typemcp@gmail.com" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "jinja2>=3.1",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "javalang>=0.13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Type-MCP/mcp-anything"
+Repository = "https://github.com/Type-MCP/mcp-anything"
+Issues = "https://github.com/Type-MCP/mcp-anything/issues"
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+mcp-anything = "mcp_anything.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_anything"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

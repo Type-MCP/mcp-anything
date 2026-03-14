@@ -1,0 +1,122 @@
+"""Resources for {{ design.server_name }}."""
+
+import json
+
+from mcp.server.fastmcp import FastMCP
+
+_TOOL_METADATA = {
+{% for tool in design.tools %}
+    "{{ tool.name }}": {
+        "generation_status": {{ tool.generation_status | tojson }},
+        "generation_notes": {{ tool.generation_notes | tojson }},
+        "implementation_hint": {{ tool.implementation_hint | tojson }},
+        "manual_steps": {{ tool.manual_steps | tojson }},
+    },
+{% endfor %}
+}
+
+
+def register_resources(server: FastMCP{% if design.backend %}, _get_backend{% endif %}) -> None:
+    """Register resources with the server."""
+
+{% for resource in design.resources %}
+    @server.resource("{{ resource.uri }}")
+    async def {{ resource.name | snake_case }}() -> str:
+        """{{ resource.description | safe_docstring }}"""
+    {% if resource.resource_type == "status" %}
+        {% if design.backend and design.backend.backend_type.value == "cli" %}
+        try:
+            version = await _get_backend().run_cli(["--version"])
+        except Exception:
+            version = "unknown"
+        return json.dumps({
+            "name": "{{ design.server_name }}",
+            "version": version.strip(),
+            "status": "running",
+            "tool_generation": {
+                "ready": {{ design.tools | selectattr('generation_status', 'equalto', 'ready') | list | length }},
+                "proxy": {{ design.tools | selectattr('generation_status', 'equalto', 'proxy') | list | length }},
+                "scaffolded": {{ design.tools | selectattr('generation_status', 'equalto', 'scaffolded') | list | length }},
+                "stubbed": {{ design.tools | selectattr('generation_status', 'equalto', 'stubbed') | list | length }},
+            },
+        }, indent=2)
+        {% elif design.backend and design.backend.backend_type.value == "python-api" %}
+        return json.dumps({
+            "name": "{{ design.server_name }}",
+            "status": "running",
+            "tool_generation": {
+                "ready": {{ design.tools | selectattr('generation_status', 'equalto', 'ready') | list | length }},
+                "proxy": {{ design.tools | selectattr('generation_status', 'equalto', 'proxy') | list | length }},
+                "scaffolded": {{ design.tools | selectattr('generation_status', 'equalto', 'scaffolded') | list | length }},
+                "stubbed": {{ design.tools | selectattr('generation_status', 'equalto', 'stubbed') | list | length }},
+            },
+        }, indent=2)
+        {% else %}
+        return json.dumps({
+            "name": "{{ design.server_name }}",
+            "status": "running",
+            "tool_generation": {
+                "ready": {{ design.tools | selectattr('generation_status', 'equalto', 'ready') | list | length }},
+                "proxy": {{ design.tools | selectattr('generation_status', 'equalto', 'proxy') | list | length }},
+                "scaffolded": {{ design.tools | selectattr('generation_status', 'equalto', 'scaffolded') | list | length }},
+                "stubbed": {{ design.tools | selectattr('generation_status', 'equalto', 'stubbed') | list | length }},
+            },
+        }, indent=2)
+        {% endif %}
+    {% elif resource.resource_type == "commands" %}
+        tools = await server.list_tools()
+        commands = []
+        for tool in tools:
+            metadata = _TOOL_METADATA.get(tool.name, {})
+            commands.append({
+                "name": tool.name,
+                "description": tool.description or "",
+                "generation_status": metadata.get("generation_status", "ready"),
+                "generation_notes": metadata.get("generation_notes", ""),
+                "manual_steps": metadata.get("manual_steps", []),
+            })
+        return json.dumps({"commands": commands}, indent=2)
+    {% elif resource.resource_type == "config" %}
+        {% if design.backend and design.backend.backend_type.value == "cli" %}
+        try:
+            config_output = await _get_backend().run_cli(["--help"])
+        except Exception:
+            config_output = "Could not retrieve configuration"
+        return json.dumps({
+            "help": config_output,
+            "codebase_path": str(_get_backend().codebase_path),
+        }, indent=2)
+        {% else %}
+        return json.dumps({
+            "note": "Configuration resource for {{ design.server_name }}",
+        }, indent=2)
+        {% endif %}
+    {% elif resource.resource_type == "docs" %}
+        # Dynamic documentation resource
+        tools = await server.list_tools()
+        doc_entries = []
+        for tool in tools:
+            metadata = _TOOL_METADATA.get(tool.name, {})
+            entry = {"name": tool.name, "description": tool.description or ""}
+            if hasattr(tool, "inputSchema") and tool.inputSchema:
+                entry["parameters"] = tool.inputSchema.get("properties", {})
+                entry["required"] = tool.inputSchema.get("required", [])
+            entry["generation_status"] = metadata.get("generation_status", "ready")
+            entry["generation_notes"] = metadata.get("generation_notes", "")
+            entry["implementation_hint"] = metadata.get("implementation_hint", "")
+            entry["manual_steps"] = metadata.get("manual_steps", [])
+            doc_entries.append(entry)
+        return json.dumps({
+            "server": "{{ design.server_name }}",
+            "resource": "{{ resource.uri }}",
+            "tools": doc_entries,
+        }, indent=2)
+    {% else %}
+        {% if design.backend %}
+        return await _get_backend().query("{{ resource.uri }}")
+        {% else %}
+        return json.dumps({"resource": "{{ resource.uri }}"})
+        {% endif %}
+    {% endif %}
+
+{% endfor %}
