@@ -55,18 +55,22 @@ mcp-anything status ./mcp-myapp-server # Check generation status
 - **AST analysis** of Python source code — extracts functions, parameters, types, defaults, docstrings
 - **Click/Typer support** — extracts rich parameter info from `@click.option()`, `@click.argument()`, `typer.Option()`, `typer.Argument()`
 - **Argparse detection** — finds subcommands via `add_parser()` calls
-- **Entry point detection** — recognizes `main.py`, `cli.py`, `__main__.py`, and `if __name__ == '__main__':` guards
-- **5 IPC detectors** — CLI, socket, Python API, protocol (WebSocket/gRPC/D-Bus), file I/O
+- **FastAPI/Flask** — route extraction, `Query()`/`Path()`/`Body()` params, `Depends()` filtering, APIRouter prefixes
+- **Spring Boot** — Java `@RestController`, `@GetMapping`/`@PostMapping`, `@RequestParam`/`@PathVariable`/`@RequestBody`
+- **OpenAPI/Swagger** — parses OpenAPI 3.x and Swagger 2.x specs with `$ref` resolution (works without source code)
+- **8 IPC detectors** — CLI, socket, Python API, protocol, file I/O, Flask/FastAPI, Spring Boot, OpenAPI
 - **`--help` parser** — for non-Python CLIs (Go, Rust, Node), parses help output to extract commands and flags
 - **Smart filtering** — skips test functions, private methods, function factories, `sys.exit()` callers, generic methods
 
 ### Code Generation
 
-- **3 implementation strategies**: `cli_subcommand`, `cli_function`, `python_call`
+- **5 implementation strategies**: `cli_subcommand`, `cli_function`, `python_call`, `http_call`, `stub`
+- **Async HTTP backend** with `httpx` for REST API proxying
 - **Auto-generated `run_<app>` tool** for single-purpose CLI apps
 - **Jinja2 templates** with Python-specific filters
 - **Post-generation validation** — all generated Python is verified via `ast.parse()`
 - **Auto-install** — installs target project and generated server dependencies
+- **MCP config generation** — ready-to-paste `mcp.json` for Claude Code
 
 ### Output
 
@@ -104,7 +108,7 @@ This produces a server with a `run_httpstat` tool that runs HTTP timing analysis
 }
 ```
 
-Tested against real projects: httpstat, rich-cli, Flask, litecli.
+Tested against real projects — see [ROADMAP.md](ROADMAP.md#tested-against) for the full list.
 
 ## Architecture
 
@@ -123,6 +127,10 @@ Tested against real projects: httpstat, rich-cli, Flask, litecli.
 pip install -e ".[dev,llm]"
 pytest tests/ -v
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide, architecture overview, and how to add new detectors/analyzers.
+
+See [ROADMAP.md](ROADMAP.md) for planned features and what's been completed.
 
 ## License
 
