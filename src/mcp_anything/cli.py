@@ -34,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--resume", action="store_true", help="Resume from saved manifest")
     gen.add_argument("--no-llm", action="store_true", help="Disable Claude API analysis")
     gen.add_argument("--no-install", action="store_true", help="Skip auto-installing dependencies")
+    gen.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="MCP transport mode (default: stdio, use http for remote/enterprise)",
+    )
     gen.add_argument("-v", "--verbose", action="store_true")
 
     # analyze
@@ -52,6 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
     sta = subparsers.add_parser("status", help="Show manifest state for an output directory")
     sta.add_argument("output_dir", type=Path)
 
+    # serve
+    srv = subparsers.add_parser("serve", help="Run a generated MCP server directly without installing")
+    srv.add_argument("output_dir", type=Path, help="Path to generated server directory")
+    srv.add_argument("--transport", choices=["stdio", "http"], default=None, help="Override transport mode")
+    srv.add_argument("--host", default="0.0.0.0", help="HTTP host (default: 0.0.0.0)")
+    srv.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
+
     return parser
 
 
@@ -67,6 +80,7 @@ def parse_options(args: argparse.Namespace) -> CLIOptions:
         no_llm=getattr(args, "no_llm", False),
         no_install=getattr(args, "no_install", False),
         verbose=getattr(args, "verbose", False),
+        transport=getattr(args, "transport", "stdio") or "stdio",
     )
 
 
@@ -83,6 +97,12 @@ def main() -> None:
         from mcp_anything.pipeline.engine import show_status
 
         show_status(args.output_dir, console)
+        return
+
+    if args.command == "serve":
+        from mcp_anything.serve import run_server
+
+        run_server(args.output_dir, args.transport, args.host, args.port, console)
         return
 
     options = parse_options(args)

@@ -37,6 +37,7 @@ class Emitter:
         self._emit_backend()
         self._emit_tool_modules()
         self._emit_resource_modules()
+        self._emit_prompt_modules()
         return self.generated_files
 
     def emit_tests(self) -> list[str]:
@@ -51,12 +52,15 @@ class Emitter:
         """Generate documentation."""
         start = len(self.generated_files)
         self._emit_readme()
+        self._emit_agents_md()
         return self.generated_files[start:]
 
     def emit_packaging(self) -> list[str]:
         """Generate packaging files."""
         start = len(self.generated_files)
         self._emit_pyproject()
+        if self.design.generate_docker or self.design.transport == "http":
+            self._emit_dockerfile()
         return self.generated_files[start:]
 
     def _emit_package_init(self) -> None:
@@ -115,6 +119,12 @@ class Emitter:
         content = self._render("resource_module.py.j2")
         self._write(f"src/{self.package_name}/resources.py", content)
 
+    def _emit_prompt_modules(self) -> None:
+        if not self.design.prompts:
+            return
+        content = self._render("prompts_module.py.j2")
+        self._write(f"src/{self.package_name}/prompts.py", content)
+
     def _emit_test_conftest(self) -> None:
         content = self._render("conftest.py.j2")
         self._write("tests/conftest.py", content)
@@ -131,6 +141,16 @@ class Emitter:
         content = self._render("readme.md.j2")
         self._write("README.md", content)
 
+    def _emit_agents_md(self) -> None:
+        if not self.design.generate_agents_md:
+            return
+        content = self._render("agents_md.j2")
+        self._write("AGENTS.md", content)
+
     def _emit_pyproject(self) -> None:
         content = self._render("pyproject.toml.j2")
         self._write("pyproject.toml", content)
+
+    def _emit_dockerfile(self) -> None:
+        content = self._render("Dockerfile.j2")
+        self._write("Dockerfile", content)

@@ -18,6 +18,7 @@ class CLIOptions(BaseModel):
     no_llm: bool = False
     no_install: bool = False
     verbose: bool = False
+    transport: str = "stdio"  # "stdio" or "http"
 
     def resolved_name(self) -> str:
         """Server name derived from codebase directory or override."""

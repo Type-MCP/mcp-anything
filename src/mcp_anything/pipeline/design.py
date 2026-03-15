@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from mcp_anything.models.analysis import AnalysisResult, Capability, IPCType, ParameterSpec
-from mcp_anything.models.design import AuthConfig, BackendConfig, ResourceSpec, ServerDesign, ToolImpl, ToolSpec
+from mcp_anything.models.design import AuthConfig, BackendConfig, PromptSpec, ResourceSpec, ServerDesign, ToolImpl, ToolSpec
 from mcp_anything.pipeline.context import PipelineContext
 from mcp_anything.pipeline.phase import Phase
 
@@ -416,6 +416,67 @@ Example: {{"tool_name": "Better description here"}}"""
     return tools
 
 
+def _generate_prompts(analysis: AnalysisResult) -> list[PromptSpec]:
+    """Generate MCP prompts (server-delivered skills) from analysis results."""
+    app = analysis.app_name
+    app_snake = _to_snake_case(app)
+    prompts: list[PromptSpec] = []
+
+    # General usage prompt
+    tool_list = "\n".join(f"- {c.name}: {c.description}" for c in analysis.capabilities[:20])
+    prompts.append(PromptSpec(
+        name=f"use_{app_snake}",
+        description=f"Guide for using {app} tools effectively",
+        template=f"You have access to the {app} MCP server with these tools:\n\n{tool_list}\n\n"
+        f"Use the appropriate tool based on the user's request. "
+        f"Always check required parameters before calling a tool.",
+    ))
+
+    # Debug prompt
+    prompts.append(PromptSpec(
+        name=f"debug_{app_snake}",
+        description=f"Diagnose issues with {app} operations",
+        arguments=[
+            ParameterSpec(name="error_message", type="string", description="The error to diagnose"),
+        ],
+        template=f"The user encountered an error while using {app}.\n\n"
+        "Error: {{error_message}}\n\n"
+        f"Available tools: {', '.join(c.name for c in analysis.capabilities[:15])}\n\n"
+        "Diagnose the issue and suggest which tool to use to resolve it.",
+    ))
+
+    return prompts
+
+
+def _generate_doc_resources(analysis: AnalysisResult) -> list[ResourceSpec]:
+    """Generate dynamic documentation resources from analysis."""
+    app = analysis.app_name
+    app_snake = _to_snake_case(app)
+
+    resources: list[ResourceSpec] = []
+
+    # Tool index resource — dynamic list of all tools with params
+    resources.append(ResourceSpec(
+        uri=f"docs://{app}/tool-index",
+        name=f"{app_snake}_tool_index",
+        description=f"Complete index of all {app} tools with parameters and usage",
+        resource_type="docs",
+    ))
+
+    # Group capabilities by category for category-specific docs
+    categories = {c.category for c in analysis.capabilities if c.category != "general"}
+    for cat in sorted(categories)[:5]:
+        cat_snake = _to_snake_case(cat)
+        resources.append(ResourceSpec(
+            uri=f"docs://{app}/{cat_snake}",
+            name=f"{app_snake}_{cat_snake}_docs",
+            description=f"Documentation for {app} {cat} capabilities",
+            resource_type="docs",
+        ))
+
+    return resources
+
+
 class DesignPhase(Phase):
     @property
     def name(self) -> str:
@@ -474,20 +535,48 @@ class DesignPhase(Phase):
         if target_install_hint:
             console.print(f"    Target install: {target_install_hint}")
 
+        # Generate MCP prompts (server-delivered skills)
+        prompts = _generate_prompts(analysis)
+        console.print(f"    Designed {len(prompts)} prompts")
+
+        # Generate dynamic doc resources
+        doc_resources = _generate_doc_resources(analysis)
+        resources.extend(doc_resources)
+        if doc_resources:
+            console.print(f"    Designed {len(doc_resources)} doc resources")
+
+        # Transport and enterprise features
+        transport = ctx.options.transport
+        is_http = transport == "http"
+        enable_telemetry = is_http  # Enable telemetry for HTTP servers
+
         # Add httpx dependency if any tool uses HTTP calls
         dependencies = ["mcp>=1.0"]
         if any(t.impl.strategy == "http_call" for t in tools):
             dependencies.append("httpx>=0.27")
+        if enable_telemetry:
+            dependencies.append("opentelemetry-api>=1.20")
+            dependencies.append("opentelemetry-sdk>=1.20")
+            dependencies.append("opentelemetry-exporter-otlp>=1.20")
+
+        if is_http:
+            console.print("    Transport: HTTP (streamable)")
+            console.print("    Telemetry: OpenTelemetry enabled")
+            console.print("    Docker: Dockerfile will be generated")
 
         design = ServerDesign(
             server_name=analysis.app_name,
             server_description=analysis.app_description,
             tools=tools,
             resources=resources,
+            prompts=prompts,
             tool_modules=tool_modules,
             backend=backend,
             dependencies=dependencies,
             target_install_hint=target_install_hint,
+            transport=transport,
+            enable_telemetry=enable_telemetry,
+            generate_docker=is_http,
         )
 
         ctx.manifest.design = design

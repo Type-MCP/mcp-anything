@@ -40,11 +40,28 @@ This runs the 6-phase pipeline (analyze, design, implement, test, document, pack
 --name NAME          Override server name (default: directory name)
 -o, --output-dir DIR Output directory (default: ./mcp-<name>-server)
 --backend TYPE       Force backend: cli, socket, file, python-api, protocol
+--transport TYPE     MCP transport: stdio (default) or http (enterprise/remote)
 --no-llm             Skip LLM analysis, use static detection only
 --no-install         Skip auto-installing dependencies
 --phases PHASES      Run specific phases (e.g. analyze,design)
 --resume             Resume from saved manifest
 ```
+
+### HTTP Transport (Enterprise)
+
+Generate a remote MCP server with streamable HTTP, OpenTelemetry, Docker, and AGENTS.md:
+
+```bash
+mcp-anything generate /path/to/app --transport http
+```
+
+This produces a server that runs over HTTP instead of stdio, with:
+- Streamable HTTP/SSE transport for remote access
+- OpenTelemetry instrumentation for tool usage metrics
+- Dockerfile for container deployment
+- AGENTS.md for coding agent discoverability
+- MCP Prompts (server-delivered skills)
+- Dynamic documentation resources
 
 ### Other commands
 
@@ -52,6 +69,7 @@ This runs the 6-phase pipeline (analyze, design, implement, test, document, pack
 mcp-anything analyze /path/to/app     # Run analysis only
 mcp-anything design /path/to/app      # Run analysis + design
 mcp-anything status ./mcp-myapp-server # Check generation status
+mcp-anything serve ./mcp-myapp-server  # Run server without installing
 ```
 
 ## What It Does
@@ -87,6 +105,13 @@ mcp-anything status ./mcp-myapp-server # Check generation status
 - **Post-generation validation** — all generated Python is verified via `ast.parse()`
 - **Auto-install** — installs target project and generated server dependencies
 - **MCP config generation** — ready-to-paste `mcp.json` for Claude Code
+- **MCP Prompts** — auto-generated server-delivered skills from docstrings and usage patterns
+- **Dynamic MCP Resources** — tool index and documentation served as always-up-to-date resources
+- **AGENTS.md generation** — full tool index for coding agent discoverability
+- **Streamable HTTP transport** — `--transport http` for remote/enterprise deployment
+- **OpenTelemetry** — traces and metrics for tool invocation tracking
+- **Docker packaging** — auto-generated Dockerfile for HTTP servers
+- **`mcp-anything serve`** — run generated servers directly without installing
 
 ### Output
 
@@ -95,11 +120,14 @@ The generated server package includes:
 ```
 mcp-<name>-server/
 ├── src/<name>/
-│   ├── server.py        # FastMCP server entry point
+│   ├── server.py        # FastMCP server (stdio or HTTP)
 │   ├── backend.py       # CLI/API backend adapter
-│   └── tools/           # Tool modules by category
+│   ├── tools/           # Tool modules by category
+│   ├── prompts.py       # MCP prompts (skills)
+│   └── resources.py     # MCP resources (dynamic docs)
 ├── tests/               # Generated pytest tests
-├── docs/                # Generated documentation
+├── AGENTS.md            # Tool index for coding agents
+├── Dockerfile           # Container deployment (HTTP mode)
 └── pyproject.toml       # Ready to pip install
 ```
 

@@ -100,21 +100,24 @@ _Nothing currently in progress._
 
 ## Planned
 
-### v0.5.0 — Developer Experience
+### v0.5.0 — Enterprise & Agentic Engineering
 
-- [ ] **`mcp-anything serve`** — run the generated server directly without installing
-- [ ] **Hot reload** — watch source changes and regenerate automatically
-- [ ] **Interactive mode** — review and customize detected tools before generation
-- [ ] **Docker integration** — auto-start target app in container before proxying
-- [ ] **Config file support** — `.mcp-anything.yaml` for project-specific settings
+- [x] **Streamable HTTP transport** — `--transport http` flag to generate servers with SSE/streamable HTTP instead of stdio, configurable host/port via env vars
+- [x] **MCP Prompts generation** — auto-generate server-delivered prompts (skills) for usage guidance and debugging from analysis results
+- [x] **MCP Resources as dynamic docs** — tool index and category documentation served as always-up-to-date MCP resources
+- [x] **AGENTS.md generation** — full tool index with parameters, resources, prompts, and MCP config for coding agent discoverability
+- [x] **OpenTelemetry integration** — TracerProvider setup with OTLP exporter for tool invocation tracing (auto-enabled for HTTP transport)
+- [x] **Docker packaging** — auto-generated `Dockerfile` for deploying the MCP server as a remote HTTP service
+- [x] **`mcp-anything serve`** — run generated servers directly without installing, with transport override support
+- [ ] **OAuth/token auth on MCP server** — protect the MCP server itself with OAuth2 or token-based auth (not just backend API auth)
 
 ### v0.6.0 — Quality & Ecosystem
 
 - [ ] **Generated test improvements** — integration tests with mocked backends, snapshot testing
-- [ ] **MCP resource templates** — richer resource types (logs, metrics, database schemas)
 - [ ] **Plugin system** — custom detectors and analyzers as pip-installable plugins
-- [ ] **MCP prompt generation** — auto-generate MCP prompts from docstrings and usage patterns
 - [ ] **Multi-service composition** — generate a single MCP server that proxies to multiple backend services
+- [ ] **Hot reload** — watch source changes and regenerate automatically
+- [ ] **Config file support** — `.mcp-anything.yaml` for project-specific settings
 
 ### Future
 

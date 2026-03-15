@@ -40,6 +40,15 @@ class ToolSpec(BaseModel):
     impl: ToolImpl = Field(default_factory=ToolImpl)
 
 
+class PromptSpec(BaseModel):
+    """Specification for a server-delivered MCP prompt (skill)."""
+
+    name: str
+    description: str
+    arguments: list[ParameterSpec] = Field(default_factory=list)
+    template: str = ""  # The prompt template text
+
+
 class ResourceSpec(BaseModel):
     """Specification for a single MCP resource."""
 
@@ -47,7 +56,7 @@ class ResourceSpec(BaseModel):
     name: str
     description: str
     mime_type: str = "application/json"
-    resource_type: str = "generic"  # "status", "commands", "config", "generic"
+    resource_type: str = "generic"  # "status", "commands", "config", "docs", "generic"
 
 
 class AuthConfig(BaseModel):
@@ -87,8 +96,15 @@ class ServerDesign(BaseModel):
     server_description: str = ""
     tools: list[ToolSpec] = Field(default_factory=list)
     resources: list[ResourceSpec] = Field(default_factory=list)
+    prompts: list[PromptSpec] = Field(default_factory=list)
     tool_modules: dict[str, list[str]] = Field(default_factory=dict)
     backend: Optional[BackendConfig] = None
     dependencies: list[str] = Field(default_factory=lambda: ["mcp>=1.0"])
     python_requires: str = ">=3.10"
     target_install_hint: str = ""  # pip install instruction for the target app
+    transport: str = "stdio"  # "stdio" or "http"
+    http_host: str = "0.0.0.0"
+    http_port: int = 8000
+    enable_telemetry: bool = False
+    generate_docker: bool = False
+    generate_agents_md: bool = True

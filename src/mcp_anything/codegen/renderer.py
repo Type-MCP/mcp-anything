@@ -6,6 +6,25 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
+def _safe_identifier(value: str) -> str:
+    """Ensure a string is a valid Python identifier.
+
+    Strips non-alphanumeric characters, prefixes leading digits with
+    ``p_``, and collapses reserved words with a trailing underscore.
+    """
+    import keyword
+
+    s = re.sub(r"[^a-zA-Z0-9_]", "_", value)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s:
+        return "param"
+    if s[0].isdigit():
+        s = f"p_{s}"
+    if keyword.iskeyword(s):
+        s = f"{s}_"
+    return s
+
+
 def _snake_case(value: str) -> str:
     """Convert string to snake_case."""
     s = re.sub(r"[^a-zA-Z0-9]", "_", value)
@@ -108,6 +127,7 @@ def create_jinja_env() -> Environment:
         lstrip_blocks=True,
     )
 
+    env.filters["safe_identifier"] = _safe_identifier
     env.filters["snake_case"] = _snake_case
     env.filters["pascal_case"] = _pascal_case
     env.filters["kebab_case"] = _kebab_case

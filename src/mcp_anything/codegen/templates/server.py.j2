@@ -1,5 +1,7 @@
 """MCP server for {{ design.server_name }}."""
 
+import os
+
 from mcp.server.fastmcp import FastMCP
 
 server = FastMCP("{{ design.server_name }}")
@@ -22,10 +24,41 @@ from {{ package_name }}.resources import register_resources
 register_resources(server{% if design.backend %}, _backend{% endif %})
 {% endif %}
 
+{% if design.prompts %}
+# Import and register prompts
+from {{ package_name }}.prompts import register_prompts
+register_prompts(server)
+{% endif %}
+
+{% if design.enable_telemetry %}
+# OpenTelemetry instrumentation
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+    provider = TracerProvider()
+    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if otlp_endpoint:
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint)))
+    trace.set_tracer_provider(provider)
+    _tracer = trace.get_tracer("{{ design.server_name }}")
+except ImportError:
+    _tracer = None
+{% endif %}
+
 
 def main():
     """Run the MCP server."""
-    server.run(transport="stdio")
+    transport = os.environ.get("MCP_TRANSPORT", "{{ design.transport }}")
+
+    if transport == "http":
+        host = os.environ.get("MCP_HOST", "{{ design.http_host }}")
+        port = int(os.environ.get("MCP_PORT", "{{ design.http_port }}"))
+        server.run(transport="sse", host=host, port=port)
+    else:
+        server.run(transport="stdio")
 
 
 if __name__ == "__main__":

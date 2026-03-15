@@ -58,6 +58,21 @@ def register_resources(server: FastMCP{% if design.backend %}, backend{% endif %
             "note": "Configuration resource for {{ design.server_name }}",
         }, indent=2)
         {% endif %}
+    {% elif resource.resource_type == "docs" %}
+        # Dynamic documentation resource
+        tools = server.list_tools()
+        doc_entries = []
+        for tool in tools:
+            entry = {"name": tool.name, "description": tool.description or ""}
+            if hasattr(tool, "inputSchema") and tool.inputSchema:
+                entry["parameters"] = tool.inputSchema.get("properties", {})
+                entry["required"] = tool.inputSchema.get("required", [])
+            doc_entries.append(entry)
+        return json.dumps({
+            "server": "{{ design.server_name }}",
+            "resource": "{{ resource.uri }}",
+            "tools": doc_entries,
+        }, indent=2)
     {% else %}
         {% if design.backend %}
         return await backend.query("{{ resource.uri }}")

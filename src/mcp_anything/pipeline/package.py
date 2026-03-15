@@ -67,15 +67,24 @@ class PackagePhase(Phase):
         server_slug = design.server_name.replace("_", "-")
         package_name = design.server_name.replace("-", "_")
 
-        # The entry point command — use the installed console_scripts entry
-        mcp_config = {
-            "mcpServers": {
-                server_slug: {
-                    "command": f"mcp-{server_slug}",
-                    "args": [],
+        # Generate MCP config based on transport mode
+        if design.transport == "http":
+            mcp_config = {
+                "mcpServers": {
+                    server_slug: {
+                        "url": f"http://localhost:{design.http_port}/sse",
+                    }
                 }
             }
-        }
+        else:
+            mcp_config = {
+                "mcpServers": {
+                    server_slug: {
+                        "command": f"mcp-{server_slug}",
+                        "args": [],
+                    }
+                }
+            }
 
         config_path = output_dir / "mcp.json"
         config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")

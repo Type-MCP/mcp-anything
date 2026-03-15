@@ -18,9 +18,9 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
     async def {{ tool.name }}(
     {% for param in tool.parameters | sort(attribute='required', reverse=true) %}
     {% if param.required %}
-        {{ param.name }}: {{ param.type | python_type }},
+        {{ param.name | safe_identifier }}: {{ param.type | python_type }},
     {% else %}
-        {{ param.name }}: {{ param.type | python_type }} | None = {{ param | default_value }},
+        {{ param.name | safe_identifier }}: {{ param.type | python_type }} | None = {{ param | default_value }},
     {% endif %}
     {% endfor %}
     ) -> str:
@@ -32,12 +32,12 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
         body: dict | None = None
         {% for param in tool.parameters %}
         {% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "path" %}
-        path_params["{{ param.name }}"] = str({{ param.name }})
+        path_params["{{ param.name }}"] = str({{ param.name | safe_identifier }})
         {% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "body" %}
-        body = {{ param.name }} if isinstance({{ param.name }}, dict) else {"data": {{ param.name }}}
+        body = {{ param.name | safe_identifier }} if isinstance({{ param.name | safe_identifier }}, dict) else {"data": {{ param.name | safe_identifier }}}
         {% else %}
-        if {{ param.name }} is not None:
-            query_params["{{ param.name }}"] = str({{ param.name }})
+        if {{ param.name | safe_identifier }} is not None:
+            query_params["{{ param.name }}"] = str({{ param.name | safe_identifier }})
         {% endif %}
         {% endfor %}
         try:
@@ -55,14 +55,14 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
         cmd_args: list[str] = []
         {% for param in tool.parameters %}
         {% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "passthrough" %}
-        if {{ param.name }}:
-            cmd_args.extend({{ param.name }}.split())
+        if {{ param.name | safe_identifier }}:
+            cmd_args.extend({{ param.name | safe_identifier }}.split())
         {% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "flag" %}
-        if {{ param.name }} is not None:
-            cmd_args.extend(["{{ tool.impl.arg_mapping[param.name]['flag'] }}", str({{ param.name }})])
+        if {{ param.name | safe_identifier }} is not None:
+            cmd_args.extend(["{{ tool.impl.arg_mapping[param.name]['flag'] }}", str({{ param.name | safe_identifier }})])
         {% else %}
-        if {{ param.name }} is not None:
-            cmd_args.append(str({{ param.name }}))
+        if {{ param.name | safe_identifier }} is not None:
+            cmd_args.append(str({{ param.name | safe_identifier }}))
         {% endif %}
         {% endfor %}
         return await backend.run_subcommand("{{ tool.impl.cli_subcommand }}", cmd_args)
@@ -72,7 +72,7 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
             "{{ tool.impl.cli_entry }}",
             "{{ tool.impl.python_function }}",
         {% for param in tool.parameters %}
-            {{ param.name }}={{ param.name }},
+            {{ param.name | safe_identifier }}={{ param.name | safe_identifier }},
         {% endfor %}
         )
     {% elif tool.impl.strategy == "python_call" %}
@@ -86,9 +86,9 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
         result = {{ tool.impl.python_function }}(
         {% for param in tool.parameters %}
             {% if param.required %}
-            {{ param.name }}={{ param.name }},
+            {{ param.name | safe_identifier }}={{ param.name | safe_identifier }},
             {% else %}
-            **({"{{ param.name }}": {{ param.name }}} if {{ param.name }} is not None else {}),
+            **({"{{ param.name }}": {{ param.name | safe_identifier }}} if {{ param.name | safe_identifier }} is not None else {}),
             {% endif %}
         {% endfor %}
         )
