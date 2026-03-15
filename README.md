@@ -14,11 +14,16 @@ mcp-anything generate /path/to/app
 
 Point it at any project — Python, Go, Java, Rust, Ruby, TypeScript — and get a production-ready MCP server package. No manual wrapping. No boilerplate.
 
-## Why
+### Beyond tool calls — built for the agentic era
 
-MCP is becoming the standard protocol for connecting AI agents to tools. But wrapping existing software into MCP servers is tedious, repetitive work.
+MCP is evolving fast. `mcp-anything` generates servers that use the full protocol, not just tools:
 
-`mcp-anything` automates the entire process: it analyzes your code, extracts every endpoint and command, and generates a fully typed, tested, documented MCP server — with support for the latest MCP features like streamable HTTP transport, server-delivered prompts, and agent-discoverable tool indexes.
+![Streamable HTTP](https://img.shields.io/badge/Streamable_HTTP-Deploy_remotely_over_HTTP/SSE-4285F4?style=for-the-badge)
+![MCP Prompts](https://img.shields.io/badge/MCP_Prompts-Server--delivered_skills_for_agents-34A853?style=for-the-badge)
+![MCP Resources](https://img.shields.io/badge/MCP_Resources-Dynamic_docs,_not_stale_markdown-FBBC04?style=for-the-badge)
+![AGENTS.md](https://img.shields.io/badge/AGENTS.md-Auto--discovered_by_Cursor,_Claude_Code,_Copilot-EA4335?style=for-the-badge)
+![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Trace_every_tool_invocation-7B61FF?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-Containerize_&_deploy_anywhere-2496ED?style=for-the-badge)
 
 ## Quick Start
 
@@ -76,16 +81,6 @@ This adds OpenTelemetry tracing, a Dockerfile, and an HTTP endpoint your agents 
 | Any | OpenAPI/Swagger specs, GraphQL SDL, gRPC/Protobuf |
 
 Plus WebSocket detection (FastAPI-WS, Django Channels, Socket.IO), cross-file import resolution, and schema extraction from Pydantic models, Java POJOs, and TypeScript interfaces.
-
-## Built for the Agentic Era
-
-MCP is evolving beyond simple tool calls. `mcp-anything` generates servers that use the full protocol:
-
-- **MCP Prompts** — server-delivered skills that teach agents how to use your tools effectively
-- **MCP Resources** — dynamic, always-up-to-date documentation served as resources, not stale markdown
-- **AGENTS.md** — a structured tool index that coding agents (Cursor, Claude Code, Copilot) can discover automatically
-- **OpenTelemetry** — traces every tool invocation so you can monitor what your agents are actually doing
-- **Docker-ready** — one command to containerize and deploy your MCP server anywhere
 
 ## Commands
 
