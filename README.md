@@ -18,12 +18,14 @@ Point it at any project — Python, Go, Java, Rust, Ruby, TypeScript — and get
 
 MCP is evolving fast. `mcp-anything` generates servers that use the full protocol, not just tools:
 
-![Streamable HTTP](https://img.shields.io/badge/Streamable_HTTP-Deploy_remotely_over_HTTP/SSE-4285F4?style=for-the-badge)
-![MCP Prompts](https://img.shields.io/badge/MCP_Prompts-Server--delivered_skills_for_agents-34A853?style=for-the-badge)
-![MCP Resources](https://img.shields.io/badge/MCP_Resources-Dynamic_docs,_not_stale_markdown-FBBC04?style=for-the-badge)
-![AGENTS.md](https://img.shields.io/badge/AGENTS.md-Auto--discovered_by_Cursor,_Claude_Code,_Copilot-EA4335?style=for-the-badge)
-![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Trace_every_tool_invocation-7B61FF?style=for-the-badge)
-![Docker](https://img.shields.io/badge/Docker-Containerize_&_deploy_anywhere-2496ED?style=for-the-badge)
+| Feature | What it does |
+|---------|-------------|
+| **Streamable HTTP** | Deploy MCP servers remotely over HTTP/SSE, not just local stdio |
+| **MCP Prompts** | Server-delivered skills that teach agents how to use your tools |
+| **MCP Resources** | Dynamic, always-up-to-date documentation — not stale markdown files |
+| **AGENTS.md** | Structured tool index that Cursor, Claude Code, and Copilot discover automatically |
+| **OpenTelemetry** | Trace every tool invocation — monitor what your agents are actually doing |
+| **Docker** | One command to containerize and deploy anywhere |
 
 ## Quick Start
 
