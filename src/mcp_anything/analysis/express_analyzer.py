@@ -4,6 +4,7 @@ Extracts HTTP routes, path parameters, query parameters, and request
 bodies from Express.js source files using regex patterns.
 """
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,7 +37,7 @@ class ExpressAnalysisResult:
 
 # Regex for route definitions: app.get('/path', handler) or router.post('/path', ...)
 _ROUTE_RE = re.compile(
-    r"(?:app|router|\w+Router|\w+)\."
+    r"(app|router|\w+Router|\w+)\."
     r"(get|post|put|delete|patch|all)\s*\(\s*"
     r"['\"]([^'\"]+)['\"]",
     re.IGNORECASE,
@@ -44,7 +45,7 @@ _ROUTE_RE = re.compile(
 
 # Chained route pattern: router.route('/path').get(...).post(...)
 _ROUTE_CHAIN_RE = re.compile(
-    r"\.route\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
+    r"(\w+)\.route\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
 )
 _CHAIN_METHOD_RE = re.compile(
     r"\.(get|post|put|delete|patch)\s*\(",
@@ -54,6 +55,16 @@ _CHAIN_METHOD_RE = re.compile(
 # Regex for router mount: app.use('/prefix', router)
 _ROUTER_USE_RE = re.compile(
     r"app\.use\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(\w+)",
+)
+
+# Regex for require: const varName = require('./path')
+_REQUIRE_RE = re.compile(
+    r"(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)",
+)
+
+# Regex for ES module import: import varName from './path'
+_IMPORT_RE = re.compile(
+    r"import\s+(\w+)\s+from\s+['\"]([^'\"]+)['\"]",
 )
 
 # Regex for handler function name in route: app.get('/path', handlerName)
@@ -141,8 +152,57 @@ def _extract_path_params(path: str) -> list[ParameterSpec]:
     return params
 
 
+def build_router_mount_map(root: Path, files: list[FileInfo]) -> dict[str, str]:
+    """Scan all JS/TS files to build a map of file path → mount prefix.
+
+    Resolves cross-file router mounts by correlating require/import statements
+    with app.use('/prefix', routerVar) calls.
+    """
+    # file_path → mount_prefix
+    mount_map: dict[str, str] = {}
+
+    for fi in files:
+        if fi.language not in (Language.JAVASCRIPT, Language.TYPESCRIPT):
+            continue
+        try:
+            source = (root / fi.path).read_text(errors="replace")
+        except OSError:
+            continue
+
+        # Build var_name → resolved file path from require/import
+        var_to_file: dict[str, str] = {}
+        for pattern in (_REQUIRE_RE, _IMPORT_RE):
+            for match in pattern.finditer(source):
+                var_name = match.group(1)
+                rel_path = match.group(2)
+                if rel_path.startswith("."):
+                    # Resolve relative to the file's directory
+                    base_dir = (root / fi.path).parent
+                    resolved = (base_dir / rel_path).resolve()
+                    # Try common extensions
+                    for ext in ("", ".js", ".ts", ".mjs"):
+                        candidate = Path(str(resolved) + ext)
+                        if candidate.exists():
+                            resolved = candidate
+                            break
+                    try:
+                        var_to_file[var_name] = str(resolved.relative_to(root))
+                    except ValueError:
+                        pass
+
+        # Find app.use('/prefix', varName) and map to resolved file
+        for match in _ROUTER_USE_RE.finditer(source):
+            prefix = match.group(1).rstrip("/")
+            var_name = match.group(2)
+            if var_name in var_to_file:
+                mount_map[var_to_file[var_name]] = prefix
+
+    return mount_map
+
+
 def analyze_express_file(
     root: Path, file_info: FileInfo,
+    mount_map: dict[str, str] | None = None,
 ) -> Optional[ExpressAnalysisResult]:
     """Analyze a JS/TS file for Express.js route endpoints."""
     if file_info.language not in (Language.JAVASCRIPT, Language.TYPESCRIPT):
@@ -164,16 +224,28 @@ def analyze_express_file(
     if "Router()" in source:
         result.has_routers = True
 
-    # Find router prefixes
+    # Find router prefixes from local app.use() calls
     router_prefixes: dict[str, str] = {}
     for match in _ROUTER_USE_RE.finditer(source):
         prefix = match.group(1).rstrip("/")
         var_name = match.group(2)
         router_prefixes[var_name] = prefix
 
+    # Cross-file mount prefix: if this file is mounted via app.use() in another file
+    file_mount_prefix = ""
+    if mount_map and file_info.path in mount_map:
+        file_mount_prefix = mount_map[file_info.path]
+
     # Find chained routes: router.route('/path').get(...).post(...)
     for match in _ROUTE_CHAIN_RE.finditer(source):
-        chain_path = match.group(1)
+        chain_router_var = match.group(1)
+        chain_path = match.group(2)
+
+        # Prepend router mount prefix if applicable (same-file)
+        if chain_router_var in router_prefixes:
+            chain_path = router_prefixes[chain_router_var] + chain_path
+        elif file_mount_prefix:
+            chain_path = file_mount_prefix + chain_path
         # Scan ahead for chained methods
         chain_text = source[match.end():match.end() + 1500]
         for method_match in _CHAIN_METHOD_RE.finditer(chain_text):
@@ -211,8 +283,15 @@ def analyze_express_file(
 
     # Find all routes
     for match in _ROUTE_RE.finditer(source):
-        http_method = match.group(1).upper()
-        path = match.group(2)
+        router_var = match.group(1)
+        http_method = match.group(2).upper()
+        path = match.group(3)
+
+        # Prepend router mount prefix if this route belongs to a mounted router
+        if router_var in router_prefixes:
+            path = router_prefixes[router_var] + path
+        elif file_mount_prefix and router_var != "app":
+            path = file_mount_prefix + path
 
         # Try to find handler name
         func_name = ""

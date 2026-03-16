@@ -111,11 +111,28 @@ def _load_source_module(codebase_path: str, module_path: str):
     return mod
 
 
-def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -> None:
+def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}{% if design.enable_telemetry %}, tracer=None{% endif %}) -> None:
     """Register {{ module_name }} tools with the server."""
+{% if design.enable_telemetry %}
+
+    import functools
+
+    def _trace(fn):
+        """Wrap a tool handler with an OpenTelemetry span."""
+        if not tracer:
+            return fn
+        @functools.wraps(fn)
+        async def _traced(*args, **kwargs):
+            with tracer.start_as_current_span(f"tool.{fn.__name__}"):
+                return await fn(*args, **kwargs)
+        return _traced
+{% endif %}
 
 {% for tool in tools %}
     @server.tool()
+{% if design.enable_telemetry %}
+    @_trace
+{% endif %}
     async def {{ tool.name }}(
     {% for param in tool.parameters | sort(attribute='required', reverse=true) %}
     {% if param.required %}

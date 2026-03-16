@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: **0.1.0**
+Current version: **0.1.1**
 
 ## Completed
 
@@ -64,55 +64,49 @@ Current version: **0.1.0**
 - [x] LLM-enhanced tool descriptions
 - [x] LLM-assisted tool grouping
 
----
-
-### v0.2.0 — Authentication & Reliability
+### Authentication & Reliability (v0.2.0)
 - [x] **HTTP authentication support** — API keys (header/query), Bearer tokens, Basic auth, OAuth2 client credentials
 - [x] **Environment variable configuration** — secrets via env vars (`<APP>_TOKEN`, `<APP>_API_KEY`, `<APP>_USERNAME`/`<APP>_PASSWORD`), never hardcoded
 - [x] **Error handling improvements** — retry with exponential backoff on 429/5xx, configurable timeout (`<APP>_TIMEOUT`), structured `BackendError` with status code/method/path/response
 - [x] **Base URL configuration** — configurable via `<APP>_BASE_URL` env var, auto-extracted from OpenAPI servers/host
 
----
-
-### v0.3.0 — More Languages & Frameworks
-- [x] **Express.js / Node.js** — route extraction from `app.get()`, `router.post()`, path params (`:id`), `req.params`/`req.query`/`req.body` extraction
+### More Languages & Frameworks (v0.3.0)
+- [x] **Express.js / Node.js** — route extraction from `app.get()`, `router.post()`, path params (`:id`), `req.params`/`req.query`/`req.body` extraction, cross-file router mount prefix resolution
 - [x] **Go Gin / Echo / Chi / net-http** — route extraction, route groups, path params, query/body parameter detection, gorilla/mux support
 - [x] **Django REST Framework** — ViewSets (list/create/retrieve/update/destroy), `@action` custom actions, serializer field extraction, `urls.py` pattern parsing
 - [x] **Ruby on Rails** — `routes.rb` parsing (`resources`, `namespace`, `only:` constraints, explicit routes), controller action extraction, strong parameters
 - [x] **Rust Actix/Axum** — Actix attribute macros (`#[get]`, `#[post]`), Axum `.route()` chaining, struct field extraction for `Query`/`Json` params
 
----
-
-### v0.4.0 — Smarter Analysis
+### Smarter Analysis (v0.4.0)
 - [x] **Request/response schema extraction** — infer JSON body shapes from Pydantic models, Java POJOs, TypeScript interfaces
 - [x] **Cross-file dependency resolution** — follow imports to find related types and models (Python, Java, TypeScript)
 - [x] **GraphQL support** — SDL schema parsing, query/mutation/subscription extraction with argument types
 - [x] **gRPC/protobuf support** — `.proto` file parsing, service/method extraction, message field mapping, streaming detection
 - [x] **WebSocket endpoint support** — FastAPI WebSocket, Django Channels, Socket.IO, ws library detection
 
----
+### Enterprise & Agentic Engineering (v0.5.0)
+- [x] **Streamable HTTP transport** — `--transport http` flag to generate servers with SSE/streamable HTTP instead of stdio, configurable host/port via env vars
+- [x] **MCP Prompts generation** — auto-generate server-delivered prompts (skills) for usage guidance and debugging from analysis results
+- [x] **MCP Resources as dynamic docs** — tool index and category documentation served as always-up-to-date MCP resources
+- [x] **AGENTS.md generation** — full tool index with parameters, resources, prompts, and MCP config for coding agent discoverability
+- [x] **OpenTelemetry integration** — TracerProvider initialization + `_trace` decorator wraps each tool handler with `start_as_current_span`
+- [x] **Docker packaging** — auto-generated `Dockerfile` for HTTP transport (template-only, no build validation)
+- [x] **`mcp-anything serve`** — run generated servers directly without installing, with transport override support
 
-## In Progress
-
-_Nothing currently in progress._
+### Bug Fixes & Quality (v0.1.1)
+- [x] **Test phase ordering** — generated tests now pass during generation (PYTHONPATH injection)
+- [x] **Package structure verification** — `_verify_structure` uses correct `mcp_` prefix
+- [x] **Express Router mount prefix** — cross-file prefix resolution for router-mounted routes
+- [x] **OpenTelemetry instrumentation** — `_tracer` now wraps tool handlers with spans (was dead code)
+- [x] **Integration test suite** — 20 end-to-end tests covering all 12+ source types, transport modes, resume, and manifest integrity
 
 ---
 
 ## Planned
 
-### v0.5.0 — Enterprise & Agentic Engineering
-
-- [x] **Streamable HTTP transport** — `--transport http` flag to generate servers with SSE/streamable HTTP instead of stdio, configurable host/port via env vars
-- [x] **MCP Prompts generation** — auto-generate server-delivered prompts (skills) for usage guidance and debugging from analysis results
-- [x] **MCP Resources as dynamic docs** — tool index and category documentation served as always-up-to-date MCP resources
-- [x] **AGENTS.md generation** — full tool index with parameters, resources, prompts, and MCP config for coding agent discoverability
-- [x] **OpenTelemetry integration** — TracerProvider setup with OTLP exporter for tool invocation tracing (auto-enabled for HTTP transport)
-- [x] **Docker packaging** — auto-generated `Dockerfile` for deploying the MCP server as a remote HTTP service
-- [x] **`mcp-anything serve`** — run generated servers directly without installing, with transport override support
-- [ ] **OAuth/token auth on MCP server** — protect the MCP server itself with OAuth2 or token-based auth (not just backend API auth)
-
 ### v0.6.0 — Quality & Ecosystem
 
+- [ ] **OAuth/token auth on MCP server** — protect the MCP server itself with OAuth2 or token-based auth (not just backend API auth)
 - [ ] **Generated test improvements** — integration tests with mocked backends, snapshot testing
 - [ ] **Plugin system** — custom detectors and analyzers as pip-installable plugins
 - [ ] **Multi-service composition** — generate a single MCP server that proxies to multiple backend services

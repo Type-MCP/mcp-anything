@@ -15,7 +15,7 @@ _backend = Backend()
 # Import and register tool modules
 {% for module_name in design.tool_modules %}
 from {{ package_name }}.tools.{{ module_name }} import register_tools as register_{{ module_name }}_tools
-register_{{ module_name }}_tools(server{% if design.backend %}, _backend{% endif %})
+register_{{ module_name }}_tools(server{% if design.backend %}, _backend{% endif %}{% if design.enable_telemetry %}, _tracer{% endif %})
 {% endfor %}
 
 {% if design.resources %}

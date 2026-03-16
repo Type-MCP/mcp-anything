@@ -33,7 +33,7 @@ class PackagePhase(Phase):
         ctx.manifest.generated_files.extend(generated)
 
         # Verify structure
-        errors = self._verify_structure(output_dir, design.server_name.replace("-", "_"))
+        errors = self._verify_structure(output_dir, f"mcp_{design.server_name.replace('-', '_')}")
         if errors:
             for err in errors:
                 ctx.console.print(f"    [yellow]Warning:[/yellow] {err}")

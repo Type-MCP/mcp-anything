@@ -11,6 +11,7 @@ from mcp_anything.analysis.django_analyzer import (
 )
 from mcp_anything.analysis.express_analyzer import (
     analyze_express_file,
+    build_router_mount_map,
     express_results_to_capabilities,
 )
 from mcp_anything.analysis.flask_fastapi_analyzer import (
@@ -206,13 +207,16 @@ class AnalyzePhase(Phase):
             ]
 
         # 3e. Express.js analysis
+        # Build cross-file router mount map first
+        js_ts_files = [fi for fi in files if fi.language in (Language.JAVASCRIPT, Language.TYPESCRIPT)]
+        express_mount_map = build_router_mount_map(root, js_ts_files) if js_ts_files else {}
+
         express_results = {}
-        for fi in files:
-            if fi.language in (Language.JAVASCRIPT, Language.TYPESCRIPT):
-                expr_result = analyze_express_file(root, fi)
-                if expr_result and expr_result.routes:
-                    express_results[fi.path] = expr_result
-                    fi.is_api_surface = True
+        for fi in js_ts_files:
+            expr_result = analyze_express_file(root, fi, mount_map=express_mount_map)
+            if expr_result and expr_result.routes:
+                express_results[fi.path] = expr_result
+                fi.is_api_surface = True
 
         if express_results:
             route_count = sum(len(r.routes) for r in express_results.values())

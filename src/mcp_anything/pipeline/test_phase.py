@@ -1,5 +1,6 @@
 """Phase 4: TEST — generate and run test files for the MCP server."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -41,12 +42,14 @@ class TestPhase(Phase):
         """Run pytest on the generated test suite."""
         ctx.console.print("    Running generated tests...")
         try:
+            env = {**os.environ, "PYTHONPATH": str(output_dir / "src")}
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", str(output_dir / "tests"), "-v", "--tb=short"],
                 capture_output=True,
                 text=True,
                 timeout=120,
                 cwd=str(output_dir),
+                env=env,
             )
             # Show output
             if result.stdout:
