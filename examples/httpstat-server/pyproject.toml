@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-httpstat-server"
+version = "0.1.0"
+description = "MCP server for httpstat"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.scripts]
+mcp-httpstat = "httpstat.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/httpstat"]
+
+# NOTE: This MCP server calls into the target application.
+# You must also install the target project's dependencies:
+#   pip install -e /tmp/httpstat

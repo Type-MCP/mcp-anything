@@ -135,7 +135,12 @@ mcp-anything status ./mcp-myapp-server
 
 ## Examples
 
-See the [`examples/`](examples/) directory for real-world generation results, including terminal output, generated tools, and mcp.json configs.
+| Project | Type | Tools generated | Command |
+|---------|------|-----------------|---------|
+| [httpstat](https://github.com/reorx/httpstat) | Python CLI (argparse) | 2 | `mcp-anything generate ./httpstat --name httpstat` |
+| [click](https://github.com/pallets/click) | Python library (129 functions, 71 classes) | 50 | `mcp-anything generate ./click --name click` |
+
+See [`examples/`](examples/) for the full generated server code, mcp.json configs, and details.
 
 ## Roadmap
 
