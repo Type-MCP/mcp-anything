@@ -5,16 +5,35 @@ build-backend = "hatchling.build"
 [project]
 name = "mcp-anything"
 version = "0.1.0"
-description = "Auto-generate MCP servers from any scriptable application's source code"
+description = "One command to turn any software into an MCP server"
+authors = [
+    { name = "gabrielekarra", email = "gabrielekarra@hotmail.it" },
+]
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "pydantic>=2.0",
     "jinja2>=3.1",
     "rich>=13.0",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/gabrielekarra/mcp-anything"
+Repository = "https://github.com/gabrielekarra/mcp-anything"
+Issues = "https://github.com/gabrielekarra/mcp-anything/issues"
 
 [project.optional-dependencies]
 llm = ["anthropic>=0.40"]
