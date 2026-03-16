@@ -26,6 +26,16 @@ def fake_spring_mvc_app(fixtures_dir) -> Path:
 
 
 @pytest.fixture
+def fake_jaxrs_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_jaxrs_app"
+
+
+@pytest.fixture
+def fake_micronaut_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_micronaut_app"
+
+
+@pytest.fixture
 def fake_fastapi_app(fixtures_dir) -> Path:
     return fixtures_dir / "fake_fastapi_app"
 

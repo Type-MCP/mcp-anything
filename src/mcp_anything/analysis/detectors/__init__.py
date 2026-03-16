@@ -10,6 +10,8 @@ from mcp_anything.analysis.detectors.flask_fastapi_detector import FlaskFastAPID
 from mcp_anything.analysis.detectors.go_web_detector import GoWebDetector
 from mcp_anything.analysis.detectors.graphql_detector import GraphQLDetector
 from mcp_anything.analysis.detectors.grpc_detector import GRPCDetector
+from mcp_anything.analysis.detectors.jaxrs_detector import JaxRSDetector
+from mcp_anything.analysis.detectors.micronaut_detector import MicronautDetector
 from mcp_anything.analysis.detectors.openapi_detector import OpenAPIDetector
 from mcp_anything.analysis.detectors.protocol_detector import ProtocolDetector
 from mcp_anything.analysis.detectors.rails_detector import RailsDetector
@@ -25,6 +27,8 @@ ALL_DETECTORS: list[type[Detector]] = [
     OpenAPIDetector,
     ProtocolDetector,
     SpringDetector,
+    JaxRSDetector,
+    MicronautDetector,
     ExpressDetector,
     DjangoDetector,
     GoWebDetector,
@@ -44,6 +48,8 @@ __all__ = [
     "OpenAPIDetector",
     "ProtocolDetector",
     "SpringDetector",
+    "JaxRSDetector",
+    "MicronautDetector",
     "ExpressDetector",
     "DjangoDetector",
     "GoWebDetector",

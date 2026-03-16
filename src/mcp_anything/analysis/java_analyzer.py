@@ -1,4 +1,4 @@
-"""Regex-based Java source analyzer for Spring Boot and Spring MVC endpoints.
+"""Regex-based Java source analyzer for Spring, JAX-RS, and Micronaut endpoints.
 
 Extracts REST controller methods, path mappings, request parameters,
 path variables, and request bodies from Java source files.
@@ -14,7 +14,7 @@ from mcp_anything.models.analysis import Capability, FileInfo, IPCType, Language
 
 @dataclass
 class SpringEndpoint:
-    """A REST endpoint extracted from a Spring controller."""
+    """A REST endpoint extracted from a Java controller."""
 
     http_method: str  # GET, POST, PUT, DELETE, PATCH
     path: str
@@ -24,19 +24,22 @@ class SpringEndpoint:
     return_type: str
     source_file: str
     controller_class: str
-    controller_path: str  # base path from @RequestMapping on class
+    controller_path: str  # base path from class-level annotation
 
 
 @dataclass
 class JavaAnalysisResult:
-    """Result of analyzing Java source files for Spring patterns."""
+    """Result of analyzing Java source files for REST patterns."""
 
     endpoints: list[SpringEndpoint] = field(default_factory=list)
     controllers: list[str] = field(default_factory=list)
     has_spring_boot: bool = False
 
 
-# Mapping annotations → HTTP methods
+# ---------------------------------------------------------------------------
+# Spring annotations
+# ---------------------------------------------------------------------------
+
 _HTTP_METHOD_ANNOTATIONS = {
     "GetMapping": "GET",
     "PostMapping": "POST",
@@ -89,7 +92,7 @@ _METHOD_ANNOTATION_RE = re.compile(
     re.DOTALL,
 )
 
-# Regex to match annotation + type + name for each parameter
+# Regex to match annotation + type + name for each parameter (Spring)
 _PARAM_ANNOTATION_RE = re.compile(
     r'@(RequestParam|PathVariable|RequestBody)'
     r'(?:\s*\(([^)]*)\))?'  # annotation arguments (everything inside parens)
@@ -107,6 +110,79 @@ _BARE_PARAM_RE = re.compile(
     r'\s*(?:,|$)',
 )
 
+# ---------------------------------------------------------------------------
+# JAX-RS annotations
+# ---------------------------------------------------------------------------
+
+# Class-level @Path("/api/...")
+_JAXRS_CLASS_PATH_RE = re.compile(
+    r'@Path\s*\(\s*["\']([^"\']*)["\'].*?\)\s+'
+    r'(?:@\w+(?:\s*\([^)]*\))?\s+)*'  # skip other class-level annotations
+    r'(?:public\s+)?class\s+(\w+)',
+    re.DOTALL,
+)
+
+# Method-level: @GET/@POST/... optionally followed by @Path("...")
+# Captures: (1) HTTP method, (2) optional path, (3) return type, (4) method name
+_JAXRS_METHOD_RE = re.compile(
+    r'@(GET|POST|PUT|DELETE|PATCH)\b'
+    r'(?:\s+@Path\s*\(\s*["\']([^"\']*)["\'].*?\))?'  # optional @Path
+    r'(?:\s+@(?:Consumes|Produces)\s*\([^)]*\))*'  # skip @Consumes/@Produces
+    r'\s+'
+    r'(?:public\s+)?'
+    r'([\w<>,\s]+?)'  # return type
+    r'\s+'
+    r'(\w+)'  # method name
+    r'\s*\(',  # opening paren
+    re.DOTALL,
+)
+
+# JAX-RS parameter annotations: @QueryParam("name"), @PathParam("name"), @FormParam("name")
+_JAXRS_PARAM_RE = re.compile(
+    r'@(QueryParam|PathParam|FormParam)\s*\(\s*["\'](\w+)["\']\s*\)'
+    r'\s+'
+    r'([\w]+(?:<[\w<>,\s]+>)?)\s+'  # type
+    r'(\w+)'  # parameter name
+)
+
+# ---------------------------------------------------------------------------
+# Micronaut annotations
+# ---------------------------------------------------------------------------
+
+# Class-level @Controller("/api/...")
+_MICRONAUT_CLASS_RE = re.compile(
+    r'@Controller\s*\(\s*["\']([^"\']*)["\'].*?\)\s+'
+    r'(?:@\w+(?:\s*\([^)]*\))?\s+)*'
+    r'(?:public\s+)?class\s+(\w+)',
+    re.DOTALL,
+)
+
+# Method-level: @Get("/{id}"), @Post("/"), etc.
+_MICRONAUT_METHOD_RE = re.compile(
+    r'@(Get|Post|Put|Delete|Patch)\b'
+    r'(?:\s*\(\s*["\']([^"\']*)["\'].*?\))?'  # optional path
+    r'\s+'
+    r'(?:public\s+)?'
+    r'([\w<>,\s]+?)'  # return type
+    r'\s+'
+    r'(\w+)'  # method name
+    r'\s*\(',  # opening paren
+    re.DOTALL,
+)
+
+# Micronaut param annotations: @QueryValue, @PathVariable, @Body
+_MICRONAUT_PARAM_RE = re.compile(
+    r'@(QueryValue|PathVariable|Body)\b'
+    r'(?:\s*\(\s*["\']?(\w*)["\']?\s*\))?'  # optional name
+    r'\s+'
+    r'([\w]+(?:<[\w<>,\s]+>)?)\s+'  # type
+    r'(\w+)'  # parameter name
+)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 def _parse_annotation_args(args_str: str) -> dict:
     """Parse annotation arguments like 'required = false, defaultValue = "10"'."""
@@ -137,8 +213,8 @@ def _parse_annotation_args(args_str: str) -> dict:
     return result
 
 
-def _extract_params(param_string: str) -> list[ParameterSpec]:
-    """Extract parameters from a Java method signature string."""
+def _extract_spring_params(param_string: str) -> list[ParameterSpec]:
+    """Extract parameters from a Spring method signature string."""
     params: list[ParameterSpec] = []
 
     for match in _PARAM_ANNOTATION_RE.finditer(param_string):
@@ -189,6 +265,71 @@ def _extract_params(param_string: str) -> list[ParameterSpec]:
     return params
 
 
+def _extract_jaxrs_params(param_string: str) -> list[ParameterSpec]:
+    """Extract parameters from a JAX-RS method signature string."""
+    params: list[ParameterSpec] = []
+
+    for match in _JAXRS_PARAM_RE.finditer(param_string):
+        annotation = match.group(1)  # QueryParam, PathParam, FormParam
+        param_alias = match.group(2)  # name from annotation
+        java_type = match.group(3).strip()
+        param_name = match.group(4)
+
+        base_type = java_type.split("<")[0].strip()
+        mcp_type = _JAVA_TYPE_MAP.get(base_type, "string")
+
+        name = param_alias or param_name
+
+        if annotation == "PathParam":
+            required = True
+        else:
+            required = False
+
+        params.append(ParameterSpec(
+            name=name,
+            type=mcp_type,
+            description="",
+            required=required,
+            default=None,
+        ))
+
+    return params
+
+
+def _extract_micronaut_params(param_string: str) -> list[ParameterSpec]:
+    """Extract parameters from a Micronaut method signature string."""
+    params: list[ParameterSpec] = []
+
+    for match in _MICRONAUT_PARAM_RE.finditer(param_string):
+        annotation = match.group(1)  # QueryValue, PathVariable, Body
+        ann_name = match.group(2) or ""  # optional name override
+        java_type = match.group(3).strip()
+        param_name = match.group(4)
+
+        base_type = java_type.split("<")[0].strip()
+        mcp_type = _JAVA_TYPE_MAP.get(base_type, "string")
+
+        name = ann_name if ann_name else param_name
+
+        if annotation == "PathVariable":
+            required = True
+        elif annotation == "Body":
+            required = True
+            mcp_type = "object"
+        else:
+            required = False
+
+        params.append(ParameterSpec(
+            name=name,
+            type=mcp_type,
+            description="",
+            required=required,
+            default=None,
+        ))
+
+    return params
+
+
 def _make_description(method_name: str) -> str:
     """Generate a readable description from a Java method name."""
     # Split camelCase
@@ -216,8 +357,23 @@ def _extract_balanced_parens(source: str, start: int) -> str:
     return source[start + 1:]
 
 
+def _detect_framework(source: str) -> str:
+    """Detect which Java REST framework a source file uses."""
+    if re.search(r'import\s+(?:javax|jakarta)\.ws\.rs', source):
+        return "jaxrs"
+    if re.search(r'import\s+io\.micronaut', source):
+        return "micronaut"
+    if re.search(r'@(?:Rest)?Controller|@(?:Get|Post|Put|Delete|Patch)Mapping', source):
+        return "spring"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Main analysis function
+# ---------------------------------------------------------------------------
+
 def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisResult]:
-    """Analyze a single Java file for Spring REST endpoints."""
+    """Analyze a single Java file for REST endpoints."""
     if file_info.language != Language.JAVA:
         return None
 
@@ -231,21 +387,35 @@ def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisR
     if "@SpringBootApplication" in source:
         result.has_spring_boot = True
 
-    # Find controller class
+    framework = _detect_framework(source)
+
+    if framework == "jaxrs":
+        _analyze_jaxrs(source, file_info, result)
+    elif framework == "micronaut":
+        _analyze_micronaut(source, file_info, result)
+    else:
+        _analyze_spring(source, file_info, result)
+
+    if not result.endpoints and not result.controllers and not result.has_spring_boot:
+        return None
+
+    return result
+
+
+def _analyze_spring(source: str, file_info: FileInfo, result: JavaAnalysisResult) -> None:
+    """Extract Spring endpoints from source."""
     controller_match = _CONTROLLER_CLASS_RE.search(source)
     if not controller_match:
-        return result if result.has_spring_boot else None
+        return
 
     controller_name = controller_match.group(1)
     result.controllers.append(controller_name)
 
-    # Find class-level base path
     class_path = ""
     class_mapping = _CLASS_REQUEST_MAPPING_RE.search(source)
     if class_mapping:
         class_path = class_mapping.group(1).rstrip("/")
 
-    # Find all endpoint methods
     for match in _METHOD_ANNOTATION_RE.finditer(source):
         annotation = match.group(1)
         method_path = match.group(2) or ""
@@ -253,11 +423,9 @@ def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisR
         return_type = match.group(4)
         method_name = match.group(5)
 
-        # Extract balanced parentheses content for parameters
-        paren_start = match.end() - 1  # position of '('
+        paren_start = match.end() - 1
         param_string = _extract_balanced_parens(source, paren_start)
 
-        # Determine HTTP method
         if annotation == "RequestMapping" and request_method_override:
             http_method = request_method_override
         elif annotation in _HTTP_METHOD_ANNOTATIONS:
@@ -265,20 +433,16 @@ def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisR
         else:
             http_method = "GET"
 
-        # Build full path
         full_path = class_path
         if method_path:
             if not method_path.startswith("/"):
                 method_path = "/" + method_path
             full_path += method_path
 
-        # Extract parameters
-        params = _extract_params(param_string)
-
-        # Map Java return type
+        params = _extract_spring_params(param_string)
         mcp_return = _JAVA_TYPE_MAP.get(return_type, "string")
 
-        endpoint = SpringEndpoint(
+        result.endpoints.append(SpringEndpoint(
             http_method=http_method,
             path=full_path or "/",
             method_name=method_name,
@@ -288,11 +452,101 @@ def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisR
             source_file=file_info.path,
             controller_class=controller_name,
             controller_path=class_path,
-        )
-        result.endpoints.append(endpoint)
+        ))
 
-    return result
 
+def _analyze_jaxrs(source: str, file_info: FileInfo, result: JavaAnalysisResult) -> None:
+    """Extract JAX-RS endpoints from source."""
+    class_match = _JAXRS_CLASS_PATH_RE.search(source)
+    if not class_match:
+        return
+
+    class_path = class_match.group(1).rstrip("/")
+    controller_name = class_match.group(2)
+    result.controllers.append(controller_name)
+
+    for match in _JAXRS_METHOD_RE.finditer(source):
+        http_method = match.group(1)  # GET, POST, etc.
+        method_path = match.group(2) or ""
+        return_type = match.group(3)
+        method_name = match.group(4)
+
+        paren_start = match.end() - 1
+        param_string = _extract_balanced_parens(source, paren_start)
+
+        full_path = class_path
+        if method_path:
+            if not method_path.startswith("/"):
+                method_path = "/" + method_path
+            full_path += method_path
+
+        params = _extract_jaxrs_params(param_string)
+        mcp_return = _JAVA_TYPE_MAP.get(return_type, "string")
+
+        result.endpoints.append(SpringEndpoint(
+            http_method=http_method,
+            path=full_path or "/",
+            method_name=method_name,
+            description=_make_description(method_name),
+            parameters=params,
+            return_type=mcp_return,
+            source_file=file_info.path,
+            controller_class=controller_name,
+            controller_path=class_path,
+        ))
+
+
+def _analyze_micronaut(source: str, file_info: FileInfo, result: JavaAnalysisResult) -> None:
+    """Extract Micronaut endpoints from source."""
+    class_match = _MICRONAUT_CLASS_RE.search(source)
+    if not class_match:
+        return
+
+    class_path = class_match.group(1).rstrip("/")
+    controller_name = class_match.group(2)
+    result.controllers.append(controller_name)
+
+    _MICRONAUT_HTTP_METHODS = {
+        "Get": "GET", "Post": "POST", "Put": "PUT",
+        "Delete": "DELETE", "Patch": "PATCH",
+    }
+
+    for match in _MICRONAUT_METHOD_RE.finditer(source):
+        annotation = match.group(1)  # Get, Post, etc.
+        method_path = match.group(2) or ""
+        return_type = match.group(3)
+        method_name = match.group(4)
+
+        paren_start = match.end() - 1
+        param_string = _extract_balanced_parens(source, paren_start)
+
+        http_method = _MICRONAUT_HTTP_METHODS.get(annotation, "GET")
+
+        full_path = class_path
+        if method_path:
+            if not method_path.startswith("/"):
+                method_path = "/" + method_path
+            full_path += method_path
+
+        params = _extract_micronaut_params(param_string)
+        mcp_return = _JAVA_TYPE_MAP.get(return_type, "string")
+
+        result.endpoints.append(SpringEndpoint(
+            http_method=http_method,
+            path=full_path or "/",
+            method_name=method_name,
+            description=_make_description(method_name),
+            parameters=params,
+            return_type=mcp_return,
+            source_file=file_info.path,
+            controller_class=controller_name,
+            controller_path=class_path,
+        ))
+
+
+# ---------------------------------------------------------------------------
+# Capability conversion (framework-agnostic)
+# ---------------------------------------------------------------------------
 
 def java_results_to_capabilities(
     results: dict[str, JavaAnalysisResult],
@@ -303,15 +557,12 @@ def java_results_to_capabilities(
 
     for file_path, result in results.items():
         for ep in result.endpoints:
-            # Generate a unique tool name: http_method + path segments
-            # e.g., GET /api/users/{id} → get_user_by_id
             tool_name = _endpoint_to_tool_name(ep)
 
             if tool_name in seen:
                 continue
             seen.add(tool_name)
 
-            # Add http_method and path as metadata in description
             desc = f"{ep.http_method} {ep.path} - {ep.description}"
 
             capabilities.append(Capability(
@@ -330,15 +581,12 @@ def java_results_to_capabilities(
 
 def _endpoint_to_tool_name(ep: SpringEndpoint) -> str:
     """Generate a snake_case tool name from an endpoint."""
-    # Clean up path: /api/users/{id} → users_id
     path_parts = ep.path.strip("/").split("/")
-    # Remove common prefixes
     if path_parts and path_parts[0] in ("api", "v1", "v2", "v3"):
         path_parts = path_parts[1:]
 
     clean_parts = []
     for part in path_parts:
-        # {id} → by_id
         if part.startswith("{") and part.endswith("}"):
             clean_parts.append(f"by_{part[1:-1]}")
         else:
@@ -348,7 +596,6 @@ def _endpoint_to_tool_name(ep: SpringEndpoint) -> str:
     path_name = "_".join(clean_parts) if clean_parts else ep.method_name
 
     name = f"{method_prefix}_{path_name}"
-    # Clean up
     name = re.sub(r"[^a-z0-9_]", "_", name.lower())
     name = re.sub(r"_+", "_", name).strip("_")
     return name
