@@ -64,6 +64,17 @@ def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
             arg_mapping=arg_mapping,
         )
 
+    # CLI options group: capability came from help-text parsing (e.g. ffmpeg sections)
+    if cap.category == "cli_options" and ipc_type == IPCType.CLI:
+        arg_mapping = {}
+        for p in cap.parameters:
+            arg_mapping[p.name] = {"style": "flag", "flag": f"-{p.name}"}
+        return ToolImpl(
+            strategy="cli_subcommand",
+            cli_subcommand="",  # no subcommand — pass flags directly to the binary
+            arg_mapping=arg_mapping,
+        )
+
     # CLI subcommand: capability came from argparse add_parser detection
     if cap.category == "cli_command" and ipc_type == IPCType.CLI:
         arg_mapping = {}
@@ -102,6 +113,7 @@ def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
                 python_module=module_path,
                 python_function=cap.source_function,
                 python_import_path=cap.source_file,
+                python_class=cap.source_class,
                 arg_mapping=arg_mapping,
             )
         elif ipc_type == IPCType.CLI:
@@ -202,11 +214,16 @@ def _build_backend_config(analysis: AnalysisResult, codebase_path: str = "") -> 
         if analysis.entry_points:
             config.command = f"python {analysis.entry_points[0]}"
         else:
-            # Fallback: find a Python file that likely has a main() or __main__ block
+            # Fallback: find a Python file that likely has a main script
+            found_py = False
             for cap in analysis.capabilities:
                 if cap.source_file and cap.source_file.endswith(".py"):
                     config.command = f"python {cap.source_file}"
+                    found_py = True
                     break
+            # For non-Python CLI tools (ffmpeg, sox, etc.), use the app name
+            if not found_py:
+                config.command = analysis.app_name
 
     # Extract details from IPC mechanisms
     for mech in analysis.ipc_mechanisms:
@@ -338,8 +355,9 @@ def _make_run_cli_tool(analysis: AnalysisResult) -> Optional[ToolSpec]:
             if cap.source_file and cap.source_file.endswith(".py"):
                 entry = cap.source_file
                 break
+    # For non-Python CLI tools (ffmpeg, sox, etc.), use the app name as the command
     if not entry:
-        return None
+        entry = analysis.app_name
 
     description = f"Run {analysis.app_name} with the given command-line arguments"
 
@@ -495,9 +513,8 @@ class DesignPhase(Phase):
         # Convert capabilities to tool specs
         tools = [_capability_to_tool(cap, analysis.primary_ipc) for cap in analysis.capabilities]
 
-        # For single-purpose CLI apps with few tools, add a "run" tool
-        has_subcommands = any(cap.category == "cli_command" for cap in analysis.capabilities)
-        if not has_subcommands and len(tools) < 5 and analysis.primary_ipc == IPCType.CLI:
+        # Add a generic "run" tool for all CLI apps — always the most useful tool
+        if analysis.primary_ipc == IPCType.CLI:
             run_tool = _make_run_cli_tool(analysis)
             if run_tool:
                 tools.insert(0, run_tool)

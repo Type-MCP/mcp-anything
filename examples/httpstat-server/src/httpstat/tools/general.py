@@ -1,5 +1,6 @@
 """general tools for httpstat."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP

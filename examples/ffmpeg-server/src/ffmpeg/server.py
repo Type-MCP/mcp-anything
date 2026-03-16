@@ -11,6 +11,8 @@ from ffmpeg.backend import Backend
 _backend = Backend()
 
 # Import and register tool modules
+from ffmpeg.tools.general import register_tools as register_general_tools
+register_general_tools(server, _backend)
 from ffmpeg.tools.cli_options import register_tools as register_cli_options_tools
 register_cli_options_tools(server, _backend)
 

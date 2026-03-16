@@ -770,7 +770,7 @@ def analyze_python_file(root: Path, file_info: FileInfo) -> Optional[ASTAnalysis
     return result
 
 
-MAX_TOOLS = 50  # Cap to avoid overwhelming the server with hundreds of tools
+MAX_TOOLS = 200  # Cap to avoid overwhelming the server with hundreds of tools
 
 
 def ast_results_to_capabilities(
@@ -873,6 +873,7 @@ def ast_results_to_capabilities(
                 )
                 qualified_name = f"{_snake_case(cls.name)}_{method.name}"
                 cap.name = qualified_name
+                cap.source_class = cls.name
                 if qualified_name not in seen_names:
                     capabilities.append(cap)
                     seen_names.add(qualified_name)

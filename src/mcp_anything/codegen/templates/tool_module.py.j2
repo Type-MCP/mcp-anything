@@ -1,5 +1,6 @@
 """{{ module_name }} tools for {{ design.server_name }}."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP
@@ -59,7 +60,12 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
             cmd_args.extend({{ param.name | safe_identifier }}.split())
         {% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "flag" %}
         if {{ param.name | safe_identifier }} is not None:
+        {% if param.type == "boolean" %}
+            if {{ param.name | safe_identifier }}:
+                cmd_args.append("{{ tool.impl.arg_mapping[param.name]['flag'] }}")
+        {% else %}
             cmd_args.extend(["{{ tool.impl.arg_mapping[param.name]['flag'] }}", str({{ param.name | safe_identifier }})])
+        {% endif %}
         {% else %}
         if {{ param.name | safe_identifier }} is not None:
             cmd_args.append(str({{ param.name | safe_identifier }}))
@@ -76,6 +82,41 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
         {% endfor %}
         )
     {% elif tool.impl.strategy == "python_call" %}
+    {% if tool.impl.python_class %}
+        # Instance method: {{ tool.impl.python_module }}.{{ tool.impl.python_class }}.{{ tool.impl.python_function }}
+        import sys
+        import importlib
+        from pathlib import Path
+        codebase = Path("{{ design.backend.codebase_path if design.backend else '' }}")
+        parent = str(codebase.parent)
+        if parent not in sys.path:
+            sys.path.insert(0, parent)
+        mod = importlib.import_module("{{ design.backend.codebase_path.rstrip('/').split('/')[-1] if design.backend else '' }}.{{ tool.impl.python_module }}")
+        cls = getattr(mod, "{{ tool.impl.python_class }}")
+        kwargs = {}
+        {% for param in tool.parameters %}
+            {% if param.required %}
+        kwargs["{{ param.name }}"] = {{ param.name | safe_identifier }}
+            {% else %}
+        if {{ param.name | safe_identifier }} is not None:
+            kwargs["{{ param.name }}"] = {{ param.name | safe_identifier }}
+            {% endif %}
+        {% endfor %}
+        method = getattr(cls, "{{ tool.impl.python_function }}")
+        # Check if it's a static/class method or needs an instance
+        if isinstance(inspect.getattr_static(cls, "{{ tool.impl.python_function }}"), (staticmethod, classmethod)):
+            result = method(**kwargs)
+        else:
+            return json.dumps({
+                "tool": "{{ tool.name }}",
+                "class": "{{ tool.impl.python_class }}",
+                "method": "{{ tool.impl.python_function }}",
+                "parameters": kwargs,
+                "note": "This is an instance method on {{ tool.impl.python_class }}. "
+                        "Create an instance first, then call .{{ tool.impl.python_function }}() on it."
+            }, indent=2)
+        return str(result)
+    {% else %}
         # Direct Python call: {{ tool.impl.python_module }}.{{ tool.impl.python_function }}
         import sys
         from pathlib import Path
@@ -93,6 +134,7 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}) -
         {% endfor %}
         )
         return str(result)
+    {% endif %}
     {% else %}
         # Stub — implementation not yet generated
         {% if design.backend %}

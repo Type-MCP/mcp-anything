@@ -27,23 +27,29 @@ class Backend:
 
         env = {**os.environ, **self.env}
 
+        # Use cwd only if it's a Python script in a project directory
+        cwd = str(self.codebase_path) if entry.startswith("python ") else None
+
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
-            cwd=str(self.codebase_path),
+            cwd=cwd,
         )
         stdout, stderr = await proc.communicate()
 
+        output = stdout.decode().strip()
+        err_output = stderr.decode().strip()
+
         if proc.returncode != 0:
-            error_msg = stderr.decode().strip()
             raise RuntimeError(
-                f"Command failed (exit {proc.returncode}): {error_msg}\n"
+                f"Command failed (exit {proc.returncode}): {err_output}\n"
                 f"Command: {' '.join(cmd)}"
             )
 
-        return stdout.decode().strip()
+        # Some CLI tools (ffmpeg, curl) write useful output to stderr
+        return output or err_output
 
     async def run_subcommand(self, subcommand: str, args: list[str] | None = None) -> str:
         """Run a CLI subcommand (or just pass args if subcommand is empty)."""

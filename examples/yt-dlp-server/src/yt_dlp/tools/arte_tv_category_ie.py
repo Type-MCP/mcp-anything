@@ -1,5 +1,6 @@
 """arte_tv_category_ie tools for yt-dlp."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP

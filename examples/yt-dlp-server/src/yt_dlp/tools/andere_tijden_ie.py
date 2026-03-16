@@ -1,5 +1,6 @@
 """andere_tijden_ie tools for yt-dlp."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP

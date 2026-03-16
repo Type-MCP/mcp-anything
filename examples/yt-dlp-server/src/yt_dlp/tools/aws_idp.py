@@ -1,5 +1,6 @@
 """aws_idp tools for yt-dlp."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP

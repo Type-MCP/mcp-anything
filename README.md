@@ -44,18 +44,21 @@ That's it. You get a complete MCP server package in `mcp-<name>-server/`, ready 
 
 ## Showcase
 
-MCP servers auto-generated from real software — no REST API, no OpenAPI spec, just source code and CLI analysis.
+MCP servers auto-generated from real software — tested end-to-end.
 
-| Software | What it is | Generated tools | Time |
-|----------|-----------|----------------|------|
-| **ffmpeg** | Video/audio processing (transcode, cut, merge, filter) | 101 tools | ~2s |
-| **ImageMagick** | Image processing (convert, resize, filter, composite) | 50 tools | ~2s |
-| **yt-dlp** | Video downloader (1,111 source files, 4,578 classes) | 50 tools | ~9s |
-| **click** | CLI framework (129 functions, 71 classes) | 50 tools | ~3s |
+| Software | What it is | Generated tools | Works? | Time |
+|----------|-----------|----------------|--------|------|
+| **ffmpeg** | Video/audio processing | 102 tools | Yes — executes real ffmpeg commands | ~2s |
+| **httpstat** | HTTP timing visualizer | 2 tools | Yes — makes real HTTP requests | ~2s |
+| **yt-dlp** | Video downloader | 200 tools | Scaffolded | ~8s |
+| **click** | CLI framework | 50 tools | Scaffolded | ~3s |
 
-These are tools that **no OpenAPI-to-MCP generator can produce** — the software has no REST API. MCP-Anything analyzed the source code and CLI interfaces and generated working MCP servers automatically.
+**"Works"** = generate, install, call a tool, get real output. No manual editing.
+**"Scaffolded"** = correct tool schemas and server structure, but instance method wiring needs manual completion.
 
-See [`examples/`](examples/) for the full generated code.
+Best results today: **CLI tools** and **REST APIs**. These produce fully functional servers out of the box.
+
+See [`examples/`](examples/) for the full generated code and test results.
 
 ## How it works
 
@@ -151,15 +154,14 @@ mcp-anything status ./mcp-myapp-server
 
 ## Examples
 
-| Project | Type | Tools | Command |
-|---------|------|-------|---------|
-| [ffmpeg](https://ffmpeg.org/) | Desktop CLI (video/audio) | 101 | `mcp-anything generate ./ffmpeg-help --name ffmpeg` |
-| [ImageMagick](https://docs.wand-py.org/) | Desktop library (image processing) | 50 | `mcp-anything generate ./wand --name imagemagick` |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Python CLI (video downloader) | 50 | `mcp-anything generate ./yt_dlp --name yt-dlp` |
-| [click](https://github.com/pallets/click) | Python library (CLI framework) | 50 | `mcp-anything generate ./click --name click` |
-| [httpstat](https://github.com/reorx/httpstat) | Python CLI (HTTP timing) | 2 | `mcp-anything generate ./httpstat --name httpstat` |
+| Project | Type | Tools | Status |
+|---------|------|-------|--------|
+| [ffmpeg](https://ffmpeg.org/) | Desktop CLI (video/audio) | 102 | Working end-to-end |
+| [httpstat](https://github.com/reorx/httpstat) | Python CLI (HTTP timing) | 2 | Working end-to-end |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Python library (video downloader) | 200 | Scaffolded |
+| [click](https://github.com/pallets/click) | Python library (CLI framework) | 50 | Scaffolded |
 
-See [`examples/`](examples/) for the full generated server code, mcp.json configs, and details.
+See [`examples/`](examples/) for full details, generated code, and test results.
 
 ## Roadmap
 

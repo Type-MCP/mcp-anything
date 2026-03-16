@@ -34,6 +34,13 @@ Add to your `claude_desktop_config.json`:
 
 ## Available Tools
 
+### `run_ffmpeg`
+
+Run ffmpeg with the given command-line arguments
+
+**Parameters:**
+- `args` (string): Command-line arguments to pass to ffmpeg (e.g. a URL or flags)
+
 ### `ffmpeg_getting_help`
 
 Getting help options for ffmpeg

@@ -1,5 +1,6 @@
 """breakline_status_printer tools for yt-dlp."""
 
+import inspect
 import json
 
 from mcp.server.fastmcp import FastMCP

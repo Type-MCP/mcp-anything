@@ -72,6 +72,7 @@ class Capability(BaseModel):
     return_type: str = "string"
     source_file: str = ""
     source_function: str = ""
+    source_class: str = ""
     ipc_type: Optional[IPCType] = None
 
 

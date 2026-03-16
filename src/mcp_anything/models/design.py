@@ -19,6 +19,7 @@ class ToolImpl(BaseModel):
     python_module: str = ""
     python_function: str = ""
     python_import_path: str = ""
+    python_class: str = ""  # For instance methods: class to instantiate
     # For http_call: HTTP method and path
     http_method: str = ""  # GET, POST, PUT, DELETE, PATCH
     http_path: str = ""    # e.g. /api/users/{id}

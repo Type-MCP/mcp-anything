@@ -5,6 +5,11 @@ from typing import Any
 
 
 @dataclass
+class RunFfmpegParams:
+    """Parameters for run_ffmpeg."""
+    args: str
+
+@dataclass
 class FfmpegGettingHelpParams:
     """Parameters for ffmpeg_getting_help."""
     h: bool | None = None

@@ -28,6 +28,13 @@ def register_resources(server: FastMCP, backend) -> None:
             })
         return json.dumps({"commands": commands}, indent=2)
 
+    @server.resource("app://yt-dlp/config")
+    async def yt_dlp_config() -> str:
+        """Current configuration of yt-dlp"""
+        return json.dumps({
+            "note": "Configuration resource for yt-dlp",
+        }, indent=2)
+
     @server.resource("docs://yt-dlp/tool-index")
     async def yt_dlp_tool_index() -> str:
         """Complete index of all yt-dlp tools with parameters and usage"""

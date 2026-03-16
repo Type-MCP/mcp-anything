@@ -10,6 +10,11 @@ class TestToolRegistration:
         """Server should have registered tools."""
         assert server is not None
 
+    def test_run_ffmpeg_registered(self, server):
+        """run_ffmpeg tool should be registered."""
+        # Tool registration is verified by import
+        pass
+
     def test_ffmpeg_getting_help_registered(self, server):
         """ffmpeg_getting_help tool should be registered."""
         # Tool registration is verified by import
