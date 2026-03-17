@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-anything"
-version = "0.1.1"
+version = "0.1.2"
 description = "One command to turn any software into an MCP server"
 authors = [
     { name = "gabrielekarra", email = "gabrielekarra@hotmail.it" },

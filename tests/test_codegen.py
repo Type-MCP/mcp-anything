@@ -230,8 +230,11 @@ class TestEmitter:
         console = MagicMock()
         ctx = PipelineContext(options, manifest, console)
 
+        phase = PackagePhase()
+        phase._install_dependencies = MagicMock(return_value=[])
+
         import asyncio
-        asyncio.run(PackagePhase().execute(ctx))
+        asyncio.run(phase.execute(ctx))
 
         config_path = tmp_path / "mcp.json"
         assert config_path.exists()
