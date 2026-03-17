@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "ffmpeg": {
-      "command": "mcp-ffmpeg",
-      "args": []
-    }
-  }
-}

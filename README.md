@@ -42,26 +42,44 @@ mcp-anything generate /path/to/software
 
 That's it. You get a complete MCP server package in `mcp-<name>-server/`, ready to install and use.
 
-## Showcase
+## Concrete example: GitHub MCP Server
 
-MCP servers auto-generated from real software — tested end-to-end.
+The [official GitHub MCP server](https://github.com/github/github-mcp-server) is a hand-built Go project exposing ~80 curated tools (issues, PRs, repos, actions, security alerts, etc.). It took a team months to build and maintain.
 
-| Software | What it is | Generated tools | Works? | Time |
-|----------|-----------|----------------|--------|------|
-| **ffmpeg** | Video/audio processing | 98 tools | Yes — executes real ffmpeg commands | ~2s |
-| **httpstat** | HTTP timing visualizer | 2 tools | Yes — makes real HTTP requests | ~2s |
-| **click** | CLI framework | 201 tools | Yes — auto-instantiates classes, calls methods | ~3s |
-| **ImageMagick** | Image processing (Wand) | 200 tools | Yes — auto-instantiates Image objects | ~4s |
+What happens if you point mcp-anything at GitHub's public OpenAPI spec instead?
 
-**"Works"** = generate, install, call a tool, get real output. No manual editing.
+```bash
+mcp-anything generate https://api.github.com --name github
+```
 
-See [`examples/`](examples/) for the full generated code and test results.
+|  | Official (hand-built) | **mcp-anything (auto-generated)** |
+|--|----------------------|----------------------------------|
+| **Language** | Go | Python |
+| **Build time** | Months | Seconds |
+| **Tools** | ~80 (curated subset) | ~1,093 (every API operation) |
+| **Backend** | Native Go SDK + GraphQL | `httpx` HTTP proxy from OpenAPI spec |
+| **Auth** | PAT / OAuth | PAT via `GITHUB_API_KEY` env var |
+| **Transport** | stdio, HTTP | stdio (default), HTTP (`--transport http`) |
+| **Tests** | Hand-written | Auto-generated pytest suite |
+| **Docs** | Hand-written README | Auto-generated AGENTS.md + MCP resources |
+
+### What you get
+
+The generated server covers **every** GitHub REST API endpoint — repos, issues, PRs, actions, packages, security advisories, code search, gists, orgs, teams, notifications, and more. Each endpoint becomes an MCP tool with typed parameters extracted from the OpenAPI spec.
+
+### Trade-offs
+
+The official server is **curated**: 80 tools chosen for what LLMs actually need, with custom logic, GraphQL integration, and toolset filtering. The auto-generated server is **comprehensive**: 1,093 tools covering the entire API surface, but without hand-tuned descriptions or GraphQL queries. It's the difference between a bespoke suit and an instant wardrobe — one fits perfectly, the other covers everything.
+
+For most use cases, the auto-generated server is a perfectly functional starting point that would have taken a team months to build manually.
+
+See [`examples/github-server/`](examples/github-server/) for the full generated code.
 
 ## How it works
 
 MCP-Anything runs a 6-phase pipeline:
 
-1. **Analyze** — Scans your codebase with 15 static detectors to find IPC mechanisms (CLI args, HTTP routes, gRPC services, GraphQL schemas, WebSockets, sockets, file I/O).
+1. **Analyze** — Scans your codebase with 17 static detectors to find IPC mechanisms (CLI args, HTTP routes, gRPC services, GraphQL schemas, WebSockets, sockets, file I/O).
 2. **Design** — Maps discovered capabilities to MCP tool specifications with typed parameters, descriptions, and grouping. Optional LLM enhancement via Claude API.
 3. **Implement** — Generates Python server code using Jinja2 templates. Picks the right backend strategy (subprocess, HTTP proxy, Python call) for each tool.
 4. **Test** — Generates a pytest test suite and validates all output with AST parsing.
@@ -74,7 +92,7 @@ Pipeline state is saved as JSON — use `--resume` to pick up where you left off
 
 **Python** — FastAPI, Flask, Django REST, Click, Typer, argparse, entry points, Pydantic models, docstrings (Google/NumPy/Sphinx)
 
-**Java** — Spring Boot controllers, annotations, request/path/body parameters
+**Java** — Spring Boot, JAX-RS/Quarkus, Micronaut controllers, annotations, request/path/body parameters
 
 **JavaScript/TypeScript** — Express.js routes, Router mounts, req.params/query/body
 
@@ -148,17 +166,6 @@ mcp-anything status ./mcp-myapp-server
 | `http_call` | Target app exposes HTTP endpoints | FastAPI, Flask, Spring Boot |
 | `python_call` | Target app is a Python library | Direct function invocation |
 | `stub` | Capability detected but no clear invocation path | Placeholder for manual wiring |
-
-## Examples
-
-| Project | Type | Tools | Status |
-|---------|------|-------|--------|
-| [ffmpeg](https://ffmpeg.org/) | Desktop CLI (video/audio) | 98 | Working end-to-end |
-| [httpstat](https://github.com/reorx/httpstat) | Python CLI (HTTP timing) | 2 | Working end-to-end |
-| [click](https://github.com/pallets/click) | Python library (CLI framework) | 201 | Working end-to-end |
-| [ImageMagick](https://docs.wand-py.org/) | Image processing (Wand) | 200 | Working end-to-end |
-
-See [`examples/`](examples/) for full details, generated code, and test results.
 
 ## Roadmap
 

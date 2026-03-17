@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "click": {
-      "command": "mcp-click",
-      "args": []
-    }
-  }
-}

@@ -20,7 +20,7 @@ Current version: **0.1.1**
 - [x] Smart filtering (skip tests, private methods, factories, `sys.exit()` callers)
 - [x] Docstring parsing (Google, NumPy, Sphinx styles)
 
-### IPC Detection (15 detectors)
+### IPC Detection (17 detectors)
 - [x] CLI (argparse, click, typer, fire, getopt)
 - [x] Socket (TCP/UDP, xmlrpc, ZeroMQ)
 - [x] Python API (ctypes, cffi, pybind11)
@@ -36,6 +36,8 @@ Current version: **0.1.1**
 - [x] Rust web (Actix, Axum, Rocket, Warp)
 - [x] GraphQL (SDL schemas, Graphene, Strawberry, Apollo)
 - [x] gRPC/Protobuf (.proto service definitions)
+- [x] JAX-RS/Quarkus (Java REST annotations)
+- [x] Micronaut (controller annotations)
 
 ### HTTP Framework Support
 - [x] **FastAPI** — route extraction, `Query()`/`Path()`/`Body()` params, `Depends()` filtering, APIRouter prefixes, Pydantic model detection
@@ -100,6 +102,13 @@ Current version: **0.1.1**
 - [x] **OpenTelemetry instrumentation** — `_tracer` now wraps tool handlers with spans (was dead code)
 - [x] **Integration test suite** — 20 end-to-end tests covering all 12+ source types, transport modes, resume, and manifest integrity
 
+### URL & Spec Fetching
+- [x] **URL-based generation** — `mcp-anything generate https://api.example.com/openapi.json` with auto-detection of OpenAPI/Swagger/GraphQL/Protobuf specs, Swagger UI/ReDoc URL resolution, and name derivation
+
+### More Languages & Frameworks (v0.3.1)
+- [x] **JAX-RS / Quarkus** — `@Path`, `@GET`/`@POST`/etc. annotations, `@QueryParam`/`@PathParam`/`@BeanParam` extraction
+- [x] **Micronaut** — `@Controller`, `@Get`/`@Post`/etc., `@QueryValue`/`@PathVariable`/`@Body` parameter detection
+
 ---
 
 ## Planned
@@ -115,7 +124,6 @@ Current version: **0.1.1**
 
 ### Future
 
-- [x] **URL-based generation** — `mcp-anything generate https://api.example.com/openapi.json` with auto-detection of OpenAPI/Swagger/GraphQL/Protobuf specs, Swagger UI/ReDoc URL resolution, and name derivation
 - [ ] **npm/cargo/go package support** — generate MCP servers in other languages
 - [ ] **MCP server marketplace** — publish generated servers to a registry
 - [ ] **VS Code extension** — right-click a project to generate an MCP server

@@ -30,7 +30,7 @@ One command: `mcp-anything generate <path>` → pip-installable MCP server packa
 - `src/mcp_anything/models/` — Pydantic models (analysis, design, manifest)
 - `src/mcp_anything/url_fetcher.py` — URL spec fetching and type detection
 
-## Detectors (15 total)
+## Detectors (17 total)
 Located in `src/mcp_anything/analyzers/`:
 - Python: CLI (argparse/click/typer), AST (functions/classes), Flask/FastAPI, Django DRF
 - Java: Spring Boot, Spring MVC, JAX-RS/Quarkus, Micronaut

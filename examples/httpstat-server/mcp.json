@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "httpstat": {
-      "command": "mcp-httpstat",
-      "args": []
-    }
-  }
-}
