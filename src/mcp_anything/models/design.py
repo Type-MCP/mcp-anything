@@ -10,7 +10,7 @@ from mcp_anything.models.analysis import IPCType, ParameterSpec
 class ToolImpl(BaseModel):
     """How to actually call the underlying application for this tool."""
 
-    strategy: str = "stub"  # "cli_subcommand", "cli_function", "python_call", "http_call", "stub"
+    strategy: str = "stub"  # "cli_subcommand", "cli_function", "python_call", "http_call", "protocol_call", "stub"
     # For cli_subcommand: the subcommand name to pass to the app binary
     cli_subcommand: str = ""
     # For cli_function: the source file + function that wraps into a CLI call

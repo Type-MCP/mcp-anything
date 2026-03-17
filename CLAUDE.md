@@ -43,7 +43,7 @@ Located in `src/mcp_anything/analyzers/`:
 
 ---
 
-## Current Status (verified 2026-03-16)
+## Current Status (verified 2026-03-17)
 
 ### What's WORKING (tested end-to-end with real generation)
 
@@ -63,10 +63,11 @@ All of these produce valid Python, install correctly, and pass generated tests:
 | GraphQL SDL | 0.95 | Queries/mutations → tools | Working |
 | Ruby on Rails | 0.95 | Resources → tools | Working |
 | Rust Actix | 0.95 | Macros → tools | Working |
+| WebSocket (raw) | 0.85 | Functions → protocol_call | Working |
 
 Working features:
 - All 6 pipeline phases execute
-- 5 backend strategies: cli_subcommand, cli_function, python_call, http_call, stub
+- 6 backend strategies: cli_subcommand, cli_function, python_call, http_call, protocol_call, stub
 - HTTP transport mode (`--transport http`)
 - `mcp-anything serve` command
 - `--resume` for interrupted pipelines
@@ -120,14 +121,42 @@ Working features:
 - OTel marked complete, Docker wording clarified, v0.5.0 items moved to Completed
 - Version bumped to 0.1.1
 
-### Integration Test Coverage (added 2026-03-16)
+### Docs sync — FIXED 2026-03-17
+- Detector count: 15 → 17 across README, ROADMAP, CLAUDE.md (JAX-RS/Quarkus, Micronaut were missing)
+- Moved URL-based generation from "Future" to "Completed" in ROADMAP
+- Added JAX-RS/Micronaut to ROADMAP detector list and completed sections
+- README Java section now mentions JAX-RS/Quarkus and Micronaut
+- Replaced old examples (ffmpeg, httpstat, click, imagemagick) with single concrete
+  example: auto-generated GitHub MCP server from OpenAPI spec (1,093 tools in ~6s)
+- `examples/github-server/` contains the full generated output
 
-334 total tests (314 unit + 20 integration). `tests/test_integration.py` covers:
+### Protocol backend support — IMPLEMENTED 2026-03-17
+- **Problem**: `backend_protocol.py.j2` was a pure stub with TODOs; protocol/socket
+  capabilities fell through to `"stub"` strategy calling nonexistent `run_subcommand()`
+- **New `protocol_call` strategy**: PROTOCOL and SOCKET capabilities now get
+  `protocol_call` in `design.py` instead of `stub`. Tool handlers call
+  `backend.execute(tool_name, **kwargs)` with JSON-RPC messaging.
+- **WebSocket backend** (`backend_protocol.py.j2`): Real implementation using
+  `websockets` library — JSON-RPC 2.0 messages, retry with exponential backoff,
+  connection pooling, version-compatible close detection. MQTT gets scaffolding,
+  other protocols (D-Bus, OSC) get clear "manual wiring required" documentation.
+- **Socket backend** (`backend_socket.py.j2`): Upgraded with `BackendError`,
+  retry logic, JSON-RPC response parsing, env var configuration.
+- **Tool template** (`tool_module.py.j2`): Added `protocol_call` handler between
+  `cli_function` and `python_call`, imports `BackendError` for protocol tools.
+- **Dependencies**: `websockets>=12.0` auto-added when protocol_call tools exist.
+- **Live tested**: WebSocket JSON-RPC server → 5 calls all returned correct results.
+- **Real-world tested**: Podnet/json-rpc-websocket-server → 13 tools, 15 tests pass.
+
+### Integration Test Coverage (updated 2026-03-17)
+
+359 total tests. `tests/test_integration.py` covers:
 - Python CLI (argparse), Flask, FastAPI, Django DRF
 - Express.js (including cross-file router mount prefix regression test)
 - Spring Boot, JAX-RS, Micronaut
 - Go Gin, Ruby Rails, Rust Actix
 - OpenAPI 3.0 spec, GraphQL SDL, gRPC/Protobuf
+- **WebSocket protocol** (raw websockets library, protocol_call strategy)
 - HTTP transport (Dockerfile + SSE config)
 - stdio transport (command-based mcp.json)
 - Pipeline resume (partial run → resume completes remaining phases)
@@ -164,14 +193,22 @@ fetching, type detection (OpenAPI JSON/YAML, Swagger, GraphQL SDL, Protobuf),
 name derivation from spec title or hostname, and Swagger UI/ReDoc URL resolution.
 24 tests in `tests/test_url_fetcher.py` including full pipeline integration.
 
-### Phase 5: Future Features (from ROADMAP v0.6.0+)
+### Phase 5: Protocol backend support — DONE (2026-03-17)
+
+New `protocol_call` strategy for WebSocket and Socket backends. Replaced the
+protocol stub with a real WebSocket backend using `websockets` library. Socket
+backend upgraded with BackendError, retry logic, JSON-RPC parsing. Added
+integration test for WebSocket protocol. 359 total tests pass.
+
+### Phase 6: Future Features (from ROADMAP v0.6.0+)
 
 In priority order:
-1. **Generated test improvements** — mock backends so tests verify tool logic
+1. **CLI UX** — validate `--phases` input, better error messages
+2. **Generated test improvements** — mock backends so tests verify tool logic
    without needing the real service running
-2. **Multi-service composition** — one MCP server proxying multiple backends
-3. **Config file** — `.mcp-anything.yaml` for persistent project settings
-4. **Plugin system** — custom detectors for niche frameworks
+3. **Multi-service composition** — one MCP server proxying multiple backends
+4. **Config file** — `.mcp-anything.yaml` for persistent project settings
+5. **Plugin system** — custom detectors for niche frameworks
 
 ### What "Done" Looks Like
 

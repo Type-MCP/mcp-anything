@@ -521,6 +521,63 @@ class TestGRPC:
 
 
 # ---------------------------------------------------------------------------
+# Tests — Protocol backends
+# ---------------------------------------------------------------------------
+
+class TestWebSocketProtocol:
+    """Integration test: WebSocket protocol backend (raw websockets library)."""
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline(self, fake_ws_protocol_app, tmp_output):
+        manifest = await _run_pipeline(fake_ws_protocol_app, tmp_output)
+
+        # Should detect as protocol with WebSocket
+        assert manifest.analysis is not None
+        assert manifest.analysis.primary_ipc is not None
+        mechanisms = [m.ipc_type.value for m in manifest.analysis.ipc_mechanisms]
+        assert "protocol" in mechanisms, f"Expected protocol IPC, got: {mechanisms}"
+
+        # Should produce protocol_call tools
+        tool_names = _get_tool_names(manifest)
+        assert "register_device" in tool_names, f"Expected register_device, got: {tool_names}"
+        assert "get_device" in tool_names, f"Expected get_device, got: {tool_names}"
+        assert "list_devices" in tool_names, f"Expected list_devices, got: {tool_names}"
+
+        design = manifest.design
+        assert design is not None
+
+        # All tools should use protocol_call strategy
+        for tool in design.tools:
+            if tool.name in {"register_device", "get_device", "list_devices"}:
+                assert tool.impl.strategy == "protocol_call", (
+                    f"Tool {tool.name}: expected 'protocol_call', got '{tool.impl.strategy}'"
+                )
+
+        # Backend should be protocol type
+        assert design.backend is not None
+        assert design.backend.backend_type.value == "protocol"
+
+        # Should have websockets dependency
+        assert any("websockets" in d for d in design.dependencies), (
+            f"Expected websockets dependency, got: {design.dependencies}"
+        )
+
+        # Structure, syntax, imports, and generated tests
+        pkg_name = _package_name(design.server_name)
+        _assert_standard_structure(tmp_output, pkg_name)
+        syntax_errors = _validate_python_syntax(tmp_output)
+        assert syntax_errors == [], f"Syntax errors:\n" + "\n".join(syntax_errors)
+
+        server_mod = _import_server(tmp_output, pkg_name)
+        assert hasattr(server_mod, "server"), "server object not found"
+
+        result = _run_generated_tests(tmp_output)
+        assert result.returncode == 0, (
+            f"Generated tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-1000:]}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Tests — Transport modes
 # ---------------------------------------------------------------------------
 

@@ -2,35 +2,255 @@
 
 import asyncio
 import json
+import logging
+import os
 from typing import Any
 
+logger = logging.getLogger("{{ design.server_name }}")
 
+_ENV_PREFIX = "{{ design.server_name | upper | replace('-', '_') | replace(' ', '_') }}"
+_DEFAULT_TIMEOUT = 30
+_DEFAULT_MAX_RETRIES = 3
+
+{% set protocol = design.backend.env_vars.get('PROTOCOL', 'websocket') %}
+
+class BackendError(Exception):
+    """Structured error from the protocol backend."""
+
+    def __init__(
+        self,
+        message: str,
+        method: str = "",
+        response_body: str = "",
+    ) -> None:
+        self.method = method
+        self.response_body = response_body
+        super().__init__(message)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "error": str(self),
+            "method": self.method,
+            "response_body": self.response_body,
+        }
+
+
+{% if protocol == 'websocket' %}
 class Backend:
-    """Communicates with {{ design.server_name }} via {{ design.backend.env_vars.get('PROTOCOL', 'custom') }} protocol."""
+    """Communicates with {{ design.server_name }} via WebSocket (JSON-RPC messages)."""
 
     def __init__(self) -> None:
-        self.host = "{{ design.backend.host or 'localhost' }}"
-        self.port = {{ design.backend.port or 0 }}
-        self._connected = False
+        self.url = os.environ.get(
+            f"{_ENV_PREFIX}_WS_URL",
+            "ws://{{ design.backend.host or 'localhost' }}:{{ design.backend.port or 8765 }}",
+        )
+        self.timeout = float(os.environ.get(
+            f"{_ENV_PREFIX}_TIMEOUT", str(_DEFAULT_TIMEOUT),
+        ))
+        self.max_retries = int(os.environ.get(
+            f"{_ENV_PREFIX}_MAX_RETRIES", str(_DEFAULT_MAX_RETRIES),
+        ))
+        self._connection: Any = None
+        self._request_id = 0
 
-    async def connect(self) -> None:
-        """Establish protocol connection."""
-        # TODO: Implement protocol-specific connection
-        self._connected = True
+    def _is_closed(self) -> bool:
+        """Check if the WebSocket connection is closed (compatible across versions)."""
+        if self._connection is None:
+            return True
+        # websockets >= 14 uses .state, older versions use .closed or .open
+        if hasattr(self._connection, "closed"):
+            return self._connection.closed
+        if hasattr(self._connection, "open"):
+            return not self._connection.open
+        return True
+
+    async def _get_connection(self) -> Any:
+        """Get or create a WebSocket connection."""
+        import websockets
+
+        if self._is_closed():
+            try:
+                self._connection = await websockets.connect(self.url)
+            except Exception as exc:
+                raise BackendError(
+                    f"Cannot connect to WebSocket at {self.url}: {exc}",
+                ) from exc
+        return self._connection
 
     async def disconnect(self) -> None:
-        """Close the connection."""
-        self._connected = False
+        """Close the WebSocket connection."""
+        if self._connection and not self._is_closed():
+            await self._connection.close()
+            self._connection = None
 
-    async def execute(self, tool_name: str, **kwargs: Any) -> str:
-        """Send a command via the protocol."""
-        if not self._connected:
-            await self.connect()
+    async def execute(self, method: str, **kwargs: Any) -> str:
+        """Send a JSON-RPC message and receive the response.
 
-        # TODO: Implement protocol-specific message sending
-        message = json.dumps({"method": tool_name, "params": kwargs})
-        return message
+        Sends: {"jsonrpc": "2.0", "method": "<method>", "params": {…}, "id": <n>}
+        Expects: {"jsonrpc": "2.0", "result": …, "id": <n>} or {"error": …}
+
+        If the server does not speak JSON-RPC, the raw response is returned.
+
+        Args:
+            method: The method/command name to invoke.
+            **kwargs: Parameters to include in the message.
+        """
+        last_error: Exception | None = None
+
+        for attempt in range(self.max_retries):
+            try:
+                conn = await self._get_connection()
+
+                self._request_id += 1
+                request = json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": method,
+                    "params": {k: v for k, v in kwargs.items() if v is not None},
+                    "id": self._request_id,
+                })
+
+                await conn.send(request)
+                raw = await asyncio.wait_for(
+                    conn.recv(), timeout=self.timeout,
+                )
+                response = raw if isinstance(raw, str) else raw.decode()
+
+                # Try to parse as JSON-RPC response
+                try:
+                    data = json.loads(response)
+                    if "error" in data:
+                        err = data["error"]
+                        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                        raise BackendError(
+                            f"RPC error on {method}: {msg}",
+                            method=method,
+                            response_body=response[:1000],
+                        )
+                    if "result" in data:
+                        result = data["result"]
+                        return json.dumps(result, indent=2) if not isinstance(result, str) else result
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+                # Not JSON-RPC — return raw response
+                return response
+
+            except BackendError:
+                raise
+
+            except asyncio.TimeoutError:
+                last_error = BackendError(
+                    f"WebSocket request timed out after {self.timeout}s: {method}",
+                    method=method,
+                )
+                if attempt < self.max_retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "Timeout on %s, retrying in %ds (attempt %d/%d)",
+                        method, wait, attempt + 1, self.max_retries,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise last_error
+
+            except Exception as exc:
+                # Connection error — reset and retry
+                self._connection = None
+                last_error = BackendError(
+                    f"WebSocket error on {method}: {exc}",
+                    method=method,
+                )
+                if attempt < self.max_retries - 1:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        "WebSocket error on %s, retrying in %ds (attempt %d/%d)",
+                        method, wait, attempt + 1, self.max_retries,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise last_error
+
+        raise last_error or BackendError(f"Request failed after {self.max_retries} attempts")
 
     async def query(self, uri: str) -> str:
-        """Query a resource via protocol."""
+        """Query a resource via WebSocket."""
         return await self.execute("query", uri=uri)
+{% elif protocol == 'mqtt' %}
+class Backend:
+    """Communicates with {{ design.server_name }} via MQTT.
+
+    MQTT is a publish/subscribe protocol. This backend publishes request messages
+    to a request topic and subscribes to a response topic for replies.
+
+    Configure via environment variables:
+        {{ _ENV_PREFIX }}_MQTT_BROKER  — broker host (default: localhost)
+        {{ _ENV_PREFIX }}_MQTT_PORT    — broker port (default: 1883)
+        {{ _ENV_PREFIX }}_MQTT_TOPIC   — base topic (default: {{ design.server_name }})
+    """
+
+    def __init__(self) -> None:
+        self.broker = os.environ.get(f"{_ENV_PREFIX}_MQTT_BROKER", "localhost")
+        self.port = int(os.environ.get(f"{_ENV_PREFIX}_MQTT_PORT", "1883"))
+        self.base_topic = os.environ.get(
+            f"{_ENV_PREFIX}_MQTT_TOPIC", "{{ design.server_name }}",
+        )
+        self.timeout = float(os.environ.get(
+            f"{_ENV_PREFIX}_TIMEOUT", str(_DEFAULT_TIMEOUT),
+        ))
+
+    async def execute(self, method: str, **kwargs: Any) -> str:
+        """Publish a request and wait for a response on the reply topic.
+
+        Requires: pip install paho-mqtt
+
+        Override this method to match your application's MQTT message format.
+        """
+        raise NotImplementedError(
+            f"MQTT backend for '{method}' requires manual wiring. "
+            f"Override Backend.execute() to publish to '{self.base_topic}/request' "
+            f"and subscribe to '{self.base_topic}/response'."
+        )
+
+    async def query(self, uri: str) -> str:
+        """Query a resource via MQTT."""
+        return await self.execute("query", uri=uri)
+{% else %}
+class Backend:
+    """Communicates with {{ design.server_name }} via {{ protocol }} protocol.
+
+    This backend was auto-generated as scaffolding. The {{ protocol }} protocol
+    was detected in the source code, but automatic message wiring is not yet
+    supported for this protocol type.
+
+    To complete the integration:
+    1. Install the appropriate client library for {{ protocol }}
+    2. Implement the connect() and execute() methods below
+    3. Match the message format your application expects
+
+    Configure via environment variables:
+        {{ _ENV_PREFIX }}_HOST     — target host (default: localhost)
+        {{ _ENV_PREFIX }}_PORT     — target port (default: {{ design.backend.port or 0 }})
+        {{ _ENV_PREFIX }}_TIMEOUT  — request timeout in seconds (default: 30)
+    """
+
+    def __init__(self) -> None:
+        self.host = os.environ.get(f"{_ENV_PREFIX}_HOST", "{{ design.backend.host or 'localhost' }}")
+        self.port = int(os.environ.get(f"{_ENV_PREFIX}_PORT", "{{ design.backend.port or 0 }}"))
+        self.timeout = float(os.environ.get(
+            f"{_ENV_PREFIX}_TIMEOUT", str(_DEFAULT_TIMEOUT),
+        ))
+
+    async def execute(self, method: str, **kwargs: Any) -> str:
+        """Send a command via the {{ protocol }} protocol.
+
+        Override this method to implement {{ protocol }}-specific communication.
+        """
+        raise NotImplementedError(
+            f"{{ protocol }} backend for '{method}' requires manual wiring. "
+            f"Override Backend.execute() with your {{ protocol }} client logic."
+        )
+
+    async def query(self, uri: str) -> str:
+        """Query a resource via {{ protocol }}."""
+        return await self.execute("query", uri=uri)
+{% endif %}

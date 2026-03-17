@@ -125,6 +125,14 @@ def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
                 python_function=cap.source_function,
                 arg_mapping=arg_mapping,
             )
+        elif ipc_type in (IPCType.PROTOCOL, IPCType.SOCKET):
+            # Protocol/Socket: communicate via the protocol backend
+            return ToolImpl(strategy="protocol_call", arg_mapping=arg_mapping)
+
+    # Fallback — for protocol/socket apps, use protocol_call instead of stub
+    if ipc_type in (IPCType.PROTOCOL, IPCType.SOCKET):
+        arg_mapping = {p.name: {"style": "param"} for p in cap.parameters}
+        return ToolImpl(strategy="protocol_call", arg_mapping=arg_mapping)
 
     return ToolImpl(strategy="stub")
 
@@ -578,10 +586,16 @@ class DesignPhase(Phase):
         is_http = transport == "http"
         enable_telemetry = is_http  # Enable telemetry for HTTP servers
 
-        # Add httpx dependency if any tool uses HTTP calls
+        # Add backend-specific dependencies
         dependencies = ["mcp>=1.0"]
         if any(t.impl.strategy == "http_call" for t in tools):
             dependencies.append("httpx>=0.27")
+        if any(t.impl.strategy == "protocol_call" for t in tools):
+            protocol = ""
+            if backend and backend.env_vars.get("PROTOCOL"):
+                protocol = backend.env_vars["PROTOCOL"]
+            if protocol == "websocket" or not protocol:
+                dependencies.append("websockets>=12.0")
         if enable_telemetry:
             dependencies.append("opentelemetry-api>=1.20")
             dependencies.append("opentelemetry-sdk>=1.20")

@@ -86,5 +86,10 @@ def fake_websocket_app(fixtures_dir) -> Path:
 
 
 @pytest.fixture
+def fake_ws_protocol_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_ws_protocol_app"
+
+
+@pytest.fixture
 def tmp_output(tmp_path) -> Path:
     return tmp_path / "output"

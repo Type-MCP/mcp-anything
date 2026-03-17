@@ -9,7 +9,8 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 {% set has_http_tools = tools | selectattr('impl.strategy', 'equalto', 'http_call') | list | length > 0 %}
-{% if has_http_tools %}
+{% set has_protocol_tools = tools | selectattr('impl.strategy', 'equalto', 'protocol_call') | list | length > 0 %}
+{% if has_http_tools or has_protocol_tools %}
 
 from {{ package_name }}.backend import BackendError
 {% endif %}
@@ -208,6 +209,17 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}{% 
             {{ param.name | safe_identifier }}={{ param.name | safe_identifier }},
         {% endfor %}
         )
+    {% elif tool.impl.strategy == "protocol_call" %}
+        # Protocol call: {{ tool.name }}
+        kwargs: dict[str, object] = {}
+        {% for param in tool.parameters %}
+        if {{ param.name | safe_identifier }} is not None:
+            kwargs["{{ param.name }}"] = {{ param.name | safe_identifier }}
+        {% endfor %}
+        try:
+            return await backend.execute("{{ tool.name }}", **kwargs)
+        except BackendError as exc:
+            return json.dumps(exc.to_dict(), indent=2)
     {% elif tool.impl.strategy == "python_call" %}
     {% if tool.impl.python_class %}
         # Instance method: {{ tool.impl.python_module }}.{{ tool.impl.python_class }}.{{ tool.impl.python_function }}
