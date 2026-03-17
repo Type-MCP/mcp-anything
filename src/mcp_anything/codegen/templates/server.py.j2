@@ -4,7 +4,36 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
+{% if design.enable_server_auth %}
+# ── OAuth 2.1 authorization server (authorization code + PKCE) ───────────────
+# Protects the MCP server so clients like Claude must authenticate first.
+# Set {{ design.server_auth_env_var }} to the shared token users enter in the
+# browser login form when authorizing a new connection.
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from {{ package_name }}._auth_provider import oauth_provider, login_routes
+
+_issuer_url = os.environ.get("MCP_SERVER_URL", "http://localhost:{{ design.http_port }}")
+
+server = FastMCP(
+    "{{ design.server_name }}",
+    auth=AuthSettings(
+        issuer_url=_issuer_url,
+        resource_server_url=_issuer_url,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=["mcp"],
+            default_scopes=["mcp"],
+        ),
+        required_scopes=["mcp"],
+    ),
+    auth_server_provider=oauth_provider,
+)
+
+# Register the login form routes
+server._custom_starlette_routes.extend(login_routes)
+{% else %}
 server = FastMCP("{{ design.server_name }}")
+{% endif %}
 
 {% if design.backend %}
 from {{ package_name }}.backend import Backend

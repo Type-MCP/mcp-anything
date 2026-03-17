@@ -1,0 +1,291 @@
+"""
+In-memory OAuth 2.1 Authorization Server provider for {{ design.server_name }}.
+
+Implements the full authorization code + PKCE flow required by Claude and
+other MCP clients. Protect with the {{ design.server_auth_env_var }} env var.
+
+Usage:
+  export {{ design.server_auth_env_var }}=<your-secret-token>
+  mcp-{{ design.server_name | replace('_', '-') }}
+"""
+
+import os
+import secrets
+import time
+from typing import Any
+
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    AuthorizationParams,
+    OAuthAuthorizationServerProvider,
+    OAuthClientInformationFull,
+    RefreshToken,
+)
+from mcp.shared.auth import OAuthToken
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.routing import Route
+
+# ---------------------------------------------------------------------------
+# Simple in-memory OAuth 2.1 provider
+# ---------------------------------------------------------------------------
+
+_SERVER_NAME = "{{ design.server_name }}"
+_AUTH_ENV_VAR = "{{ design.server_auth_env_var }}"
+
+_LOGIN_HTML = (
+    "<!DOCTYPE html>"
+    "<html lang='en'>"
+    "<head>"
+    "<meta charset='UTF-8'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    "<title>Connect to " + _SERVER_NAME + "</title>"
+    "<style>"
+    "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
+    "  display: flex; align-items: center; justify-content: center;"
+    "  min-height: 100vh; margin: 0; background: #f5f5f5; }"
+    ".card { background: white; padding: 2rem; border-radius: 8px;"
+    "  box-shadow: 0 2px 8px rgba(0,0,0,.12); width: 100%; max-width: 380px; }"
+    "h1 { margin: 0 0 1.5rem; font-size: 1.25rem; }"
+    "label { display: block; font-size: 0.875rem; color: #555; margin-bottom: 0.25rem; }"
+    "input { width: 100%; box-sizing: border-box; padding: 0.5rem 0.75rem;"
+    "  border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; margin-bottom: 1rem; }"
+    "button { width: 100%; padding: 0.6rem; background: #1a56db; color: white;"
+    "  border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }"
+    "button:hover { background: #1e40af; }"
+    ".error { color: #dc2626; font-size: 0.875rem; margin-bottom: 0.75rem; }"
+    ".info { color: #555; font-size: 0.8rem; margin-top: 1rem; }"
+    "</style>"
+    "</head>"
+    "<body>"
+    "<div class='card'>"
+    "<h1>Connect to " + _SERVER_NAME + "</h1>"
+    "{ERROR}"
+    "<form method='post'>"
+    "<input type='hidden' name='pending' value='{PENDING}'>"
+    "<label for='token'>Access token</label>"
+    "<input type='password' id='token' name='token' placeholder='Enter token' autofocus>"
+    "<button type='submit'>Authorize</button>"
+    "</form>"
+    "<p class='info'>Set the token via <code>" + _AUTH_ENV_VAR + "</code> env var before starting this server.</p>"
+    "</div>"
+    "</body>"
+    "</html>"
+)
+
+
+class SimpleOAuthProvider(OAuthAuthorizationServerProvider):
+    """In-memory OAuth 2.1 provider. Tokens are lost on server restart."""
+
+    def __init__(self) -> None:
+        self._clients: dict[str, OAuthClientInformationFull] = {}
+        # pending_key -> (client, params)
+        self._pending: dict[str, tuple[OAuthClientInformationFull, AuthorizationParams]] = {}
+        # code -> AuthorizationCode
+        self._codes: dict[str, AuthorizationCode] = {}
+        # access token string -> AccessToken
+        self._access_tokens: dict[str, AccessToken] = {}
+        # refresh token string -> RefreshToken
+        self._refresh_tokens: dict[str, RefreshToken] = {}
+
+    # -- Client registration -------------------------------------------------
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        return self._clients.get(client_id)
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        self._clients[client_info.client_id] = client_info
+
+    # -- Authorization code flow ---------------------------------------------
+
+    async def authorize(
+        self,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ) -> str:
+        """Store the pending auth request and return URL to the login form."""
+        pending_key = secrets.token_urlsafe(16)
+        self._pending[pending_key] = (client, params)
+        return f"/_mcp_auth/login?pending={pending_key}"
+
+    async def load_authorization_code(
+        self,
+        client: OAuthClientInformationFull,
+        authorization_code: str,
+    ) -> AuthorizationCode | None:
+        code = self._codes.get(authorization_code)
+        if code is None or code.client_id != client.client_id:
+            return None
+        if code.expires_at and time.time() > code.expires_at:
+            del self._codes[authorization_code]
+            return None
+        return code
+
+    async def exchange_authorization_code(
+        self,
+        client: OAuthClientInformationFull,
+        authorization_code: AuthorizationCode,
+    ) -> OAuthToken:
+        self._codes.pop(authorization_code.code, None)
+
+        access_token = secrets.token_urlsafe(32)
+        refresh_token_str = secrets.token_urlsafe(32)
+        expires_in = 3600
+        expires_at = int(time.time()) + expires_in
+
+        self._access_tokens[access_token] = AccessToken(
+            token=access_token,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=expires_at,
+        )
+        self._refresh_tokens[refresh_token_str] = RefreshToken(
+            token=refresh_token_str,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=int(time.time()) + 30 * 24 * 3600,
+        )
+
+        return OAuthToken(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=expires_in,
+            scope=" ".join(authorization_code.scopes),
+            refresh_token=refresh_token_str,
+        )
+
+    # -- Refresh token flow --------------------------------------------------
+
+    async def load_refresh_token(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: str,
+    ) -> RefreshToken | None:
+        rt = self._refresh_tokens.get(refresh_token)
+        if rt is None or rt.client_id != client.client_id:
+            return None
+        if rt.expires_at and time.time() > rt.expires_at:
+            del self._refresh_tokens[refresh_token]
+            return None
+        return rt
+
+    async def exchange_refresh_token(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: RefreshToken,
+        scopes: list[str],
+    ) -> OAuthToken:
+        self._refresh_tokens.pop(refresh_token.token, None)
+
+        access_token = secrets.token_urlsafe(32)
+        new_refresh_token_str = secrets.token_urlsafe(32)
+        expires_in = 3600
+        resolved_scopes = scopes or refresh_token.scopes
+
+        self._access_tokens[access_token] = AccessToken(
+            token=access_token,
+            client_id=client.client_id,
+            scopes=resolved_scopes,
+            expires_at=int(time.time()) + expires_in,
+        )
+        self._refresh_tokens[new_refresh_token_str] = RefreshToken(
+            token=new_refresh_token_str,
+            client_id=client.client_id,
+            scopes=resolved_scopes,
+            expires_at=int(time.time()) + 30 * 24 * 3600,
+        )
+
+        return OAuthToken(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=expires_in,
+            scope=" ".join(resolved_scopes),
+            refresh_token=new_refresh_token_str,
+        )
+
+    # -- Token validation ----------------------------------------------------
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        at = self._access_tokens.get(token)
+        if at is None:
+            return None
+        if at.expires_at and time.time() > at.expires_at:
+            del self._access_tokens[token]
+            return None
+        return at
+
+    # -- Revocation ----------------------------------------------------------
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        if isinstance(token, AccessToken):
+            self._access_tokens.pop(token.token, None)
+        else:
+            self._refresh_tokens.pop(token.token, None)
+
+
+# ---------------------------------------------------------------------------
+# Singleton provider instance (shared between login route and FastMCP)
+# ---------------------------------------------------------------------------
+
+oauth_provider = SimpleOAuthProvider()
+
+
+# ---------------------------------------------------------------------------
+# Login form routes (registered via server._custom_starlette_routes)
+# ---------------------------------------------------------------------------
+
+async def _login_get(request: Request) -> Response:
+    pending = request.query_params.get("pending", "")
+    html = _LOGIN_HTML.replace("{PENDING}", pending).replace("{ERROR}", "")
+    return HTMLResponse(html)
+
+
+async def _login_post(request: Request) -> Response:
+    form = await request.form()
+    token_input = str(form.get("token", "")).strip()
+    pending_key = str(form.get("pending", "")).strip()
+
+    expected = os.environ.get(_AUTH_ENV_VAR, "").strip()
+    if not expected:
+        error_html = f"<p class='error'>Server not configured: set {_AUTH_ENV_VAR} env var.</p>"
+        html = _LOGIN_HTML.replace("{PENDING}", pending_key).replace("{ERROR}", error_html)
+        return HTMLResponse(html, status_code=503)
+
+    if not pending_key or pending_key not in oauth_provider._pending:
+        return HTMLResponse("<h1>Invalid or expired authorization request.</h1>", status_code=400)
+
+    if token_input != expected:
+        error_html = "<p class='error'>Invalid token. Please try again.</p>"
+        html = _LOGIN_HTML.replace("{PENDING}", pending_key).replace("{ERROR}", error_html)
+        return HTMLResponse(html, status_code=401)
+
+    # Issue authorization code
+    client, params = oauth_provider._pending.pop(pending_key)
+    code_str = secrets.token_urlsafe(32)
+
+    auth_code = AuthorizationCode(
+        code=code_str,
+        scopes=params.scopes or ["mcp"],
+        expires_at=int(time.time()) + 300,
+        client_id=client.client_id,
+        code_challenge=params.code_challenge,
+        redirect_uri=params.redirect_uri,
+        redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
+        resource=params.resource,
+    )
+    oauth_provider._codes[code_str] = auth_code
+
+    redirect_url = str(params.redirect_uri)
+    separator = "&" if "?" in redirect_url else "?"
+    redirect_url += f"{separator}code={code_str}"
+    if params.state:
+        redirect_url += f"&state={params.state}"
+
+    return RedirectResponse(redirect_url, status_code=302)
+
+
+login_routes = [
+    Route("/_mcp_auth/login", endpoint=_login_get, methods=["GET"]),
+    Route("/_mcp_auth/login", endpoint=_login_post, methods=["POST"]),
+]

@@ -43,7 +43,7 @@ class SpringDetector(Detector):
         has_boot = False
 
         for fi in files:
-            if fi.language not in (Language.JAVA, Language.OTHER):
+            if fi.language not in (Language.JAVA, Language.KOTLIN, Language.OTHER):
                 continue
             content = self._read_file(root, fi)
             if not content:

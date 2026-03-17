@@ -38,6 +38,7 @@ class Emitter:
     def emit_all(self) -> list[str]:
         """Generate all files for the MCP server package."""
         self._emit_package_init()
+        self._emit_auth_provider()
         self._emit_server()
         self._emit_models()
         self._emit_state()
@@ -68,6 +69,7 @@ class Emitter:
         """Generate packaging files."""
         start = len(self.generated_files)
         self._emit_pyproject()
+        self._emit_mcp_json()
         if self.design.generate_docker or self.design.transport == "http":
             self._emit_dockerfile()
         return self.generated_files[start:]
@@ -75,6 +77,12 @@ class Emitter:
     def _emit_package_init(self) -> None:
         src_dir = f"src/{self.package_name}"
         self._write(f"{src_dir}/__init__.py", f'"""MCP server for {self.design.server_name}."""\n')
+
+    def _emit_auth_provider(self) -> None:
+        if not self.design.enable_server_auth:
+            return
+        content = self._render("auth_provider.py.j2")
+        self._write(f"src/{self.package_name}/_auth_provider.py", content)
 
     def _emit_server(self) -> None:
         content = self._render("server.py.j2")
@@ -165,6 +173,19 @@ class Emitter:
             return
         content = self._render("agents_md.j2")
         self._write("AGENTS.md", content)
+
+    def _emit_mcp_json(self) -> None:
+        import json as _json
+        server_slug = self.design.server_name.replace("_", "-")
+        if self.design.transport == "http":
+            server_entry: dict = {"url": f"http://localhost:{self.design.http_port}/sse"}
+        else:
+            server_entry = {
+                "command": f"mcp-{server_slug}",
+                "args": [],
+            }
+        mcp_config = {"mcpServers": {server_slug: server_entry}}
+        self._write("mcp.json", _json.dumps(mcp_config, indent=2) + "\n")
 
     def _emit_pyproject(self) -> None:
         content = self._render("pyproject.toml.j2")

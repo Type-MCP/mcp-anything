@@ -11,6 +11,8 @@ _SPRING_BOOT_APP_RE = re.compile(r'@SpringBootApplication')
 EXTENSION_MAP: dict[str, Language] = {
     ".py": Language.PYTHON,
     ".java": Language.JAVA,
+    ".kt": Language.KOTLIN,
+    ".kts": Language.KOTLIN,
     ".c": Language.C,
     ".h": Language.C,
     ".cpp": Language.CPP,

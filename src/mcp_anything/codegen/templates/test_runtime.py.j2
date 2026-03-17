@@ -17,12 +17,15 @@ class TestPackageRuntime:
     """Validate generated package coherence across startup surfaces."""
 
     def test_pyproject_has_console_entrypoint(self):
-        pyproject = Path("pyproject.toml").read_text()
+        # tests/ is one level below the package root
+        root = Path(__file__).parent.parent
+        pyproject = (root / "pyproject.toml").read_text()
         assert '[project.scripts]' in pyproject
         assert 'mcp-{{ design.server_name | kebab_case }} = "{{ package_name }}.server:main"' in pyproject
 
     def test_mcp_config_matches_transport(self):
-        config = json.loads(Path("mcp.json").read_text())
+        root = Path(__file__).parent.parent
+        config = json.loads((root / "mcp.json").read_text())
         server_entry = config["mcpServers"]["{{ design.server_name | replace('_', '-') }}"]
 {% if design.transport == "http" %}
         assert server_entry["url"] == "http://localhost:{{ design.http_port }}/sse"

@@ -124,10 +124,10 @@ class AnalyzePhase(Phase):
             f"{cli_count} CLI commands, {subcmd_count} subcommands"
         )
 
-        # 3a. Java/Spring analysis
+        # 3a. Java/Kotlin/Spring analysis
         java_results = {}
         for fi in files:
-            if fi.language == Language.JAVA:
+            if fi.language in (Language.JAVA, Language.KOTLIN):
                 jresult = analyze_java_file(root, fi)
                 if jresult and (jresult.endpoints or jresult.has_spring_boot):
                     java_results[fi.path] = jresult

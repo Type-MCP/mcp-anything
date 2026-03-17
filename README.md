@@ -1,8 +1,6 @@
 # MCP-Anything
 
-**One command to turn any software into an MCP server.**
-
-Not just REST APIs. Not just OpenAPI specs. Any software — CLI tools, desktop apps, Python libraries, web frameworks, even codebases with no API at all.
+**One command to turn any codebase into an MCP server. Not just REST APIs. Not just OpenAPI specs.**
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-7289da?logo=discord&logoColor=white)](https://discord.gg/5zCwnfJBxG)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -11,36 +9,77 @@ Not just REST APIs. Not just OpenAPI specs. Any software — CLI tools, desktop 
 
 ![mcp-anything demo](promo.gif)
 
-## The problem
-
-There are 9,000+ MCP servers today. Almost all of them are hand-built.
-
-Each one takes days or weeks of work. [blender-mcp](https://github.com/ahujasid/blender-mcp) has 17,600+ stars and took months to build. Every desktop application — Blender, GIMP, Audacity, LibreOffice — needs someone to manually write the bridge code between the application and the MCP protocol.
-
-Meanwhile, OpenAPI-to-MCP generators (Speakeasy, Stainless, FastMCP, liblab, etc.) only work if your software already has a REST API spec. Desktop software doesn't. CLI tools don't. Most Python libraries don't.
-
-**MCP-Anything bridges the gap.** It reads source code directly — Python AST, CLI help output, HTTP route decorators, OpenAPI specs, GraphQL schemas, gRPC definitions — and generates a fully functional, pip-installable MCP server package.
-
-## How we compare
-
-|  | OpenAPI-to-MCP tools | Hand-built servers | **MCP-Anything** |
-|--|---------------------|--------------------|-------------------|
-| **Input required** | OpenAPI/Swagger spec | Manual code | Any source code |
-| **Desktop software** | No | Yes (manual) | Yes (auto) |
-| **CLI tools** | No | Yes (manual) | Yes (auto) |
-| **Web frameworks** | Partial | Yes (manual) | Yes (auto) |
-| **Time to server** | Minutes | Days to weeks | Minutes |
-| **Test suite** | No | Manual | Auto-generated |
-| **Documentation** | Partial | Manual | Auto-generated |
-
-## Quick start
+## Get started
 
 ```bash
 pip install mcp-anything
-mcp-anything generate /path/to/software
+
+# Generate an MCP server from any codebase
+mcp-anything generate /path/to/your/app
+
+# Or from a URL (OpenAPI, GraphQL, gRPC spec)
+mcp-anything generate https://api.example.com/openapi.json
 ```
 
-That's it. You get a complete MCP server package in `mcp-<name>-server/`, ready to install and use.
+You get a complete, pip-installable MCP server in `./mcp-<name>-server/`. Add it to your agent in seconds:
+
+**stdio (local, default):** add `mcp.json` to your Claude Code `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "my-app": { "command": "mcp-my-app", "args": [] }
+  }
+}
+```
+
+**HTTP (remote/shared, recommended):** start the server and point your agent at it:
+```bash
+mcp-anything generate /path/to/app --transport http --server-auth
+export MCP_SERVER_TOKEN=<your-secret>
+mcp-my-app  # server runs on http://localhost:8000/sse
+```
+```json
+{
+  "mcpServers": {
+    "my-app": { "url": "http://localhost:8000/sse" }
+  }
+}
+```
+
+## Output
+
+```
+mcp-<name>-server/
+├── src/<name>/
+│   ├── server.py        # FastMCP server (stdio or HTTP/SSE)
+│   ├── backend.py       # Backend adapter (CLI / HTTP proxy / Python call)
+│   ├── tools/           # Tool modules, one file per capability group
+│   ├── prompts.py       # Server-delivered MCP prompts
+│   └── resources.py     # Dynamic MCP resources
+├── tests/               # Auto-generated pytest suite
+├── AGENTS.md            # Tool index for coding agents
+├── Dockerfile           # Container deployment (HTTP mode)
+├── mcp.json             # Ready-to-paste MCP client config
+└── pyproject.toml       # pip install -e .
+```
+
+### Why we generate AGENTS.md
+
+MCP solves tool *invocation* — an agent calls a tool and gets a result. It doesn't solve tool *discovery* at the project level.
+
+When an agent like Claude Code opens your repo, it reads `AGENTS.md` before making any MCP calls. That file tells it what the server can do, which tools exist, and how to use them — without needing an active connection. As [this article](https://itnext.io/mcp-is-dead-long-live-mcp-a67bd74a6576) argues, the next generation of agent workflows depends on agents being able to reason about available capabilities *before* invoking them. `AGENTS.md` is that bridge: a human-readable, agent-indexed map of everything the generated server exposes.
+
+### Why prefer HTTP transport
+
+stdio MCP runs the server as a local subprocess — one process per agent session, tied to your machine. It works for personal use but doesn't scale.
+
+HTTP transport (`--transport http`) lets you:
+- Deploy once, connect from anywhere (CI, cloud agents, teammates)
+- Share a single server instance across multiple agent sessions
+- Protect access with OAuth2 (`--server-auth` generates a full authorization code + PKCE flow)
+- Run in Docker or any container platform
+
+For anything beyond local prototyping, HTTP is the right default.
 
 ## Concrete example: GitHub MCP Server
 
@@ -63,122 +102,15 @@ mcp-anything generate https://api.github.com --name github
 | **Tests** | Hand-written | Auto-generated pytest suite |
 | **Docs** | Hand-written README | Auto-generated AGENTS.md + MCP resources |
 
-### What you get
-
 The generated server covers **every** GitHub REST API endpoint — repos, issues, PRs, actions, packages, security advisories, code search, gists, orgs, teams, notifications, and more. Each endpoint becomes an MCP tool with typed parameters extracted from the OpenAPI spec.
 
-### Trade-offs
-
-The official server is **curated**: 80 tools chosen for what LLMs actually need, with custom logic, GraphQL integration, and toolset filtering. The auto-generated server is **comprehensive**: 1,093 tools covering the entire API surface, but without hand-tuned descriptions or GraphQL queries. It's the difference between a bespoke suit and an instant wardrobe — one fits perfectly, the other covers everything.
-
-For most use cases, the auto-generated server is a perfectly functional starting point that would have taken a team months to build manually.
+The official server is **curated**: 80 tools chosen for what LLMs actually need, with custom logic and GraphQL integration. The auto-generated server is **comprehensive**: 1,093 tools covering the entire API surface. It's the difference between a bespoke suit and an instant wardrobe — one fits perfectly, the other covers everything immediately.
 
 See [`examples/github-server/`](examples/github-server/) for the full generated code.
 
-## How it works
-
-MCP-Anything runs a 6-phase pipeline:
-
-1. **Analyze** — Scans your codebase with 17 static detectors to find IPC mechanisms (CLI args, HTTP routes, gRPC services, GraphQL schemas, WebSockets, sockets, file I/O).
-2. **Design** — Maps discovered capabilities to MCP tool specifications with typed parameters, descriptions, and grouping. Optional LLM enhancement via Claude API.
-3. **Implement** — Generates Python server code using Jinja2 templates. Picks the right backend strategy (subprocess, HTTP proxy, Python call) for each tool.
-4. **Test** — Generates a pytest test suite and validates all output with AST parsing.
-5. **Document** — Produces AGENTS.md, MCP resources, and server-delivered prompts for agent discoverability.
-6. **Package** — Emits a pip-installable package with pyproject.toml, mcp.json config, and optional Dockerfile.
-
-Pipeline state is saved as JSON — use `--resume` to pick up where you left off.
-
-## What it detects
-
-**Python** — FastAPI, Flask, Django REST, Click, Typer, argparse, entry points, Pydantic models, docstrings (Google/NumPy/Sphinx)
-
-**Java** — Spring Boot, JAX-RS/Quarkus, Micronaut controllers, annotations, request/path/body parameters
-
-**JavaScript/TypeScript** — Express.js routes, Router mounts, req.params/query/body
-
-**Go** — Gin, Echo, Chi, net/http, gorilla/mux route groups and handlers
-
-**Ruby** — Rails controllers, routes.rb, resources, strong parameters
-
-**Rust** — Actix, Axum, Rocket, Warp attribute macros and route chaining
-
-**API specs** — OpenAPI 3.x, Swagger 2.x (with $ref resolution), GraphQL SDL, gRPC/Protobuf
-
-**Other** — WebSocket endpoints, cross-file import resolution, CLI `--help` parsing for any language
-
-## Output
-
-```
-mcp-<name>-server/
-├── src/<name>/
-│   ├── server.py        # FastMCP server (stdio or HTTP)
-│   ├── backend.py       # Backend adapter (CLI/HTTP/API)
-│   ├── tools/           # Tool modules by category
-│   ├── prompts.py       # Server-delivered MCP prompts
-│   └── resources.py     # Dynamic MCP resources
-├── tests/               # Generated pytest tests
-├── AGENTS.md            # Tool index for coding agents
-├── Dockerfile           # Container deployment (HTTP mode)
-├── mcp.json             # Claude Code / MCP client config
-└── pyproject.toml       # pip install -e .
-```
-
-## Usage
-
-```bash
-# Full pipeline
-mcp-anything generate /path/to/app
-
-# Override the server name
-mcp-anything generate /path/to/app --name my-service
-
-# Static analysis only (no Claude API key needed)
-mcp-anything generate /path/to/app --no-llm
-
-# Force a specific backend strategy
-mcp-anything generate /path/to/app --backend cli
-
-# Run specific phases
-mcp-anything generate /path/to/app --phases analyze,design
-
-# Resume from a previous run
-mcp-anything generate /path/to/app --resume
-
-# Generate with HTTP transport for remote deployment
-mcp-anything generate /path/to/app --transport http
-
-# Analysis only (no code generation)
-mcp-anything analyze /path/to/app
-
-# Run a generated server without installing
-mcp-anything serve ./mcp-myapp-server
-
-# Check generation status
-mcp-anything status ./mcp-myapp-server
-```
-
-## Backend strategies
-
-| Strategy | When used | Example |
-|----------|-----------|---------|
-| `cli_subcommand` | Target app has CLI subcommands | `git`, `docker`, Click/Typer apps |
-| `cli_function` | Single-purpose CLI tool | `httpstat`, `curl` |
-| `http_call` | Target app exposes HTTP endpoints | FastAPI, Flask, Spring Boot |
-| `python_call` | Target app is a Python library | Direct function invocation |
-| `stub` | Capability detected but no clear invocation path | Placeholder for manual wiring |
-
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full roadmap. Top priorities:
-
-## Development
-
-```bash
-pip install -e ".[dev,llm]"
-pytest tests/ -v
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details and how to add new detectors.
+See [ROADMAP.md](ROADMAP.md) for the full roadmap. See [CONTRIBUTING.md](CONTRIBUTING.md) to know how to contribute to the project.
 
 ---
 

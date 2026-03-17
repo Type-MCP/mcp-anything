@@ -28,9 +28,13 @@ class PackagePhase(Phase):
         emitter = Emitter(design, output_dir)
 
         ctx.console.print("    Generating packaging files...")
+        # emit_packaging() regenerates pyproject.toml + mcp.json (already written in implement
+        # phase so tests could find them — safe to overwrite with identical content)
         generated = emitter.emit_packaging()
 
-        ctx.manifest.generated_files.extend(generated)
+        # Only extend manifest with files not already tracked
+        tracked = set(ctx.manifest.generated_files)
+        ctx.manifest.generated_files.extend(f for f in generated if f not in tracked)
 
         # Verify structure
         errors = self._verify_structure(output_dir, f"mcp_{design.server_name.replace('-', '_')}")
@@ -115,37 +119,23 @@ class PackagePhase(Phase):
         return errors
 
     def _emit_mcp_config(self, ctx: PipelineContext, output_dir: Path) -> None:
-        """Generate a .mcp.json snippet for Claude Code integration."""
+        """Print MCP config snippet for Claude Code integration (file already written by emitter)."""
         design = ctx.manifest.design
         assert design is not None
 
         server_slug = design.server_name.replace("_", "-")
-        package_name = design.server_name.replace("-", "_")
 
-        # Generate MCP config based on transport mode
-        if design.transport == "http":
-            mcp_config = {
-                "mcpServers": {
-                    server_slug: {
-                        "url": f"http://localhost:{design.http_port}/sse",
-                    }
-                }
-            }
-        else:
-            mcp_config = {
-                "mcpServers": {
-                    server_slug: {
-                        "command": f"mcp-{server_slug}",
-                        "args": [],
-                    }
-                }
-            }
-
-        config_path = output_dir / "mcp.json"
-        config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
-        ctx.manifest.generated_files.append("mcp.json")
+        # File was already written by the emitter in emit_packaging(); just load it for display
+        mcp_config = json.loads((output_dir / "mcp.json").read_text())
 
         ctx.console.print("    Generated mcp.json config")
+        if design.enable_server_auth:
+            ctx.console.print(
+                f"    [yellow]Before starting: export {design.server_auth_env_var}=<secret-token>[/yellow]"
+            )
+            ctx.console.print(
+                "    [yellow]Users enter this token in the browser login form when connecting via Claude.[/yellow]"
+            )
         ctx.console.print()
         ctx.console.print("    [bold]Add to your Claude Code config (.mcp.json):[/bold]")
         snippet = json.dumps(mcp_config["mcpServers"], indent=6)

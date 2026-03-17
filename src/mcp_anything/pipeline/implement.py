@@ -42,6 +42,10 @@ class ImplementPhase(Phase):
         ctx.manifest.generated_files.extend(generated)
         ctx.console.print(f"    Generated {len(generated)} files (all valid Python)")
 
+        # Emit packaging files early so generated tests can find pyproject.toml / mcp.json
+        packaging = emitter.emit_packaging()
+        ctx.manifest.generated_files.extend(packaging)
+
     def _validate_python(
         self, output_dir: Path, generated_files: list[str]
     ) -> list[tuple[str, str]]:

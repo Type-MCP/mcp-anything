@@ -11,6 +11,20 @@ from typing import Optional
 
 from mcp_anything.models.analysis import Capability, FileInfo, IPCType, Language, ParameterSpec
 
+# Kotlin type → MCP parameter type additions
+_KOTLIN_TYPE_MAP = {
+    "String": "string",
+    "Int": "integer",
+    "Long": "integer",
+    "Double": "float",
+    "Float": "float",
+    "Boolean": "boolean",
+    "List": "array",
+    "Map": "object",
+    "Any": "object",
+    # Nullable variants (strip ? later)
+}
+
 
 @dataclass
 class SpringEndpoint:
@@ -48,8 +62,9 @@ _HTTP_METHOD_ANNOTATIONS = {
     "PatchMapping": "PATCH",
 }
 
-# Java type → MCP parameter type
+# Java/Kotlin type → MCP parameter type
 _JAVA_TYPE_MAP = {
+    # Java primitives and boxed
     "String": "string",
     "int": "integer",
     "Integer": "integer",
@@ -63,6 +78,9 @@ _JAVA_TYPE_MAP = {
     "Boolean": "boolean",
     "List": "array",
     "Map": "object",
+    # Kotlin types
+    "Int": "integer",
+    "Any": "object",
 }
 
 # Regex to find class-level @RequestMapping("/api/...")
@@ -114,11 +132,11 @@ _BARE_PARAM_RE = re.compile(
 # JAX-RS annotations
 # ---------------------------------------------------------------------------
 
-# Class-level @Path("/api/...")
+# Class-level @Path("/api/...") — matches class, interface, or abstract class
 _JAXRS_CLASS_PATH_RE = re.compile(
     r'@Path\s*\(\s*["\']([^"\']*)["\'].*?\)\s+'
     r'(?:@\w+(?:\s*\([^)]*\))?\s+)*'  # skip other class-level annotations
-    r'(?:public\s+)?class\s+(\w+)',
+    r'(?:public\s+)?(?:abstract\s+)?(?:class|interface)\s+(\w+)',
     re.DOTALL,
 )
 
@@ -143,6 +161,83 @@ _JAXRS_PARAM_RE = re.compile(
     r'\s+'
     r'([\w]+(?:<[\w<>,\s]+>)?)\s+'  # type
     r'(\w+)'  # parameter name
+)
+
+# ---------------------------------------------------------------------------
+# Kotlin Spring patterns
+# ---------------------------------------------------------------------------
+
+# Class-level @RequestMapping on a Kotlin @RestController
+_KOTLIN_SPRING_CLASS_RE = re.compile(
+    r'@(?:Rest)?Controller\b'
+    r'(?:\s+@\w+(?:\s*\([^)]*\))?\s*)*'
+    r'\s+(?:open\s+)?class\s+(\w+)',
+    re.DOTALL,
+)
+
+_KOTLIN_CLASS_REQUEST_MAPPING_RE = re.compile(
+    r'@RequestMapping\s*\(\s*(?:value\s*=\s*)?["\']([^"\']*)["\']',
+)
+
+# Method-level mapping annotations + Kotlin `fun` keyword
+_KOTLIN_SPRING_METHOD_RE = re.compile(
+    r'@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)'
+    r'(?:\s*\(\s*'
+    r'(?:value\s*=\s*)?'
+    r'(?:["\']([^"\']*)["\'])?'
+    r'(?:,\s*method\s*=\s*RequestMethod\.(\w+))?'
+    r'[^)]*\))?'
+    r'\s+'
+    r'(?:override\s+)?fun\s+'
+    r'(\w+)'   # method name
+    r'\s*\(',
+    re.DOTALL,
+)
+
+# Kotlin Spring params: @RequestParam / @PathVariable / @RequestBody + `name: Type`
+_KOTLIN_SPRING_PARAM_RE = re.compile(
+    r'@(RequestParam|PathVariable|RequestBody)'
+    r'(?:\s*\(([^)]*)\))?'
+    r'\s+'
+    r'(\w+)'             # parameter name
+    r'\s*:\s*'
+    r'([\w<>,?\s]+?)'   # type (possibly nullable)
+    r'\s*(?:[=,)]|$)',
+)
+
+# ---------------------------------------------------------------------------
+# Kotlin JAX-RS / Jersey patterns
+# Kotlin uses the same JAX-RS annotations but with 'fun' instead of 'public Type'
+# ---------------------------------------------------------------------------
+
+# Class-level @Path for Kotlin: annotation + 'class ClassName'
+_KOTLIN_JAXRS_CLASS_PATH_RE = re.compile(
+    r'@Path\s*\(\s*["\']([^"\']*)["\'].*?\)\s+'
+    r'(?:@\w+(?:\s*\([^)]*\))?\s+)*'
+    r'(?:open\s+)?class\s+(\w+)',
+    re.DOTALL,
+)
+
+# Kotlin method: @GET/@POST/... + optional @Path + 'fun methodName('
+_KOTLIN_JAXRS_METHOD_RE = re.compile(
+    r'@(GET|POST|PUT|DELETE|PATCH)\b'
+    r'(?:\s+@Path\s*\(\s*["\']([^"\']*)["\'].*?\))?'
+    r'(?:\s+@(?:Consumes|Produces)\s*\([^)]*\))*'
+    r'\s+'
+    r'(?:override\s+)?fun\s+'
+    r'(\w+)'  # method name
+    r'\s*\(',
+    re.DOTALL,
+)
+
+# Kotlin JAX-RS params: @QueryParam/@PathParam/@FormParam annotation + 'name: Type'
+_KOTLIN_JAXRS_PARAM_RE = re.compile(
+    r'@(QueryParam|PathParam|FormParam)\s*\(\s*["\'](\w+)["\']\s*\)'
+    r'\s+'
+    r'(\w+)'          # parameter name
+    r'\s*:\s*'
+    r'([\w<>,?\s]+?)' # type (possibly nullable with ?)
+    r'\s*(?:[=,)]|$)' # followed by default value, comma, closing paren, or end
 )
 
 # ---------------------------------------------------------------------------
@@ -296,6 +391,79 @@ def _extract_jaxrs_params(param_string: str) -> list[ParameterSpec]:
     return params
 
 
+def _extract_kotlin_spring_params(param_string: str) -> list[ParameterSpec]:
+    """Extract parameters from a Kotlin Spring method signature string."""
+    params: list[ParameterSpec] = []
+
+    for match in _KOTLIN_SPRING_PARAM_RE.finditer(param_string):
+        annotation = match.group(1)  # RequestParam, PathVariable, RequestBody
+        ann_args = match.group(2) or ""
+        param_name = match.group(3)
+        kotlin_type = match.group(4).strip().rstrip("?")  # strip nullable marker
+
+        base_type = kotlin_type.split("<")[0].strip()
+        mcp_type = _JAVA_TYPE_MAP.get(base_type, "string")
+
+        # Skip injected Spring/Kotlin types
+        if kotlin_type in (
+            "HttpServletRequest", "HttpServletResponse", "HttpSession",
+            "Principal", "Authentication", "BindingResult", "Model",
+            "RedirectAttributes", "Pageable", "MultipartFile",
+        ):
+            continue
+
+        ann = _parse_annotation_args(ann_args)
+        name = ann.get("name", param_name)
+        default_value = ann.get("defaultValue")
+
+        if annotation == "PathVariable":
+            required = True
+        elif annotation == "RequestBody":
+            required = True
+            mcp_type = "object"
+        elif "required" in ann:
+            required = ann["required"] == "true"
+        else:
+            required = default_value is None
+
+        params.append(ParameterSpec(
+            name=name,
+            type=mcp_type,
+            description="",
+            required=required,
+            default=default_value,
+        ))
+
+    return params
+
+
+def _extract_kotlin_jaxrs_params(param_string: str) -> list[ParameterSpec]:
+    """Extract parameters from a Kotlin JAX-RS method signature string."""
+    params: list[ParameterSpec] = []
+
+    for match in _KOTLIN_JAXRS_PARAM_RE.finditer(param_string):
+        annotation = match.group(1)  # QueryParam, PathParam, FormParam
+        param_alias = match.group(2)  # name from annotation
+        param_name = match.group(3)
+        kotlin_type = match.group(4).strip().rstrip("?")  # strip nullable marker
+
+        base_type = kotlin_type.split("<")[0].strip()
+        mcp_type = _JAVA_TYPE_MAP.get(base_type, "string")
+
+        name = param_alias or param_name
+        required = annotation == "PathParam"
+
+        params.append(ParameterSpec(
+            name=name,
+            type=mcp_type,
+            description="",
+            required=required,
+            default=None,
+        ))
+
+    return params
+
+
 def _extract_micronaut_params(param_string: str) -> list[ParameterSpec]:
     """Extract parameters from a Micronaut method signature string."""
     params: list[ParameterSpec] = []
@@ -373,8 +541,8 @@ def _detect_framework(source: str) -> str:
 # ---------------------------------------------------------------------------
 
 def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisResult]:
-    """Analyze a single Java file for REST endpoints."""
-    if file_info.language != Language.JAVA:
+    """Analyze a single Java or Kotlin file for REST endpoints."""
+    if file_info.language not in (Language.JAVA, Language.KOTLIN):
         return None
 
     try:
@@ -387,12 +555,18 @@ def analyze_java_file(root: Path, file_info: FileInfo) -> Optional[JavaAnalysisR
     if "@SpringBootApplication" in source:
         result.has_spring_boot = True
 
+    is_kotlin = file_info.language == Language.KOTLIN
     framework = _detect_framework(source)
 
     if framework == "jaxrs":
-        _analyze_jaxrs(source, file_info, result)
+        if is_kotlin:
+            _analyze_kotlin_jaxrs(source, file_info, result)
+        else:
+            _analyze_jaxrs(source, file_info, result)
     elif framework == "micronaut":
         _analyze_micronaut(source, file_info, result)
+    elif is_kotlin:
+        _analyze_kotlin_spring(source, file_info, result)
     else:
         _analyze_spring(source, file_info, result)
 
@@ -480,8 +654,106 @@ def _analyze_jaxrs(source: str, file_info: FileInfo, result: JavaAnalysisResult)
                 method_path = "/" + method_path
             full_path += method_path
 
+        # Normalize JAX-RS regex path params: {id: \\d+} → {id}
+        full_path = _strip_jaxrs_regex(full_path)
+
         params = _extract_jaxrs_params(param_string)
         mcp_return = _JAVA_TYPE_MAP.get(return_type, "string")
+
+        result.endpoints.append(SpringEndpoint(
+            http_method=http_method,
+            path=full_path or "/",
+            method_name=method_name,
+            description=_make_description(method_name),
+            parameters=params,
+            return_type=mcp_return,
+            source_file=file_info.path,
+            controller_class=controller_name,
+            controller_path=class_path,
+        ))
+
+
+def _analyze_kotlin_jaxrs(source: str, file_info: FileInfo, result: JavaAnalysisResult) -> None:
+    """Extract JAX-RS endpoints from a Kotlin source file."""
+    class_match = _KOTLIN_JAXRS_CLASS_PATH_RE.search(source)
+    if not class_match:
+        return
+
+    class_path = class_match.group(1).rstrip("/")
+    controller_name = class_match.group(2)
+    result.controllers.append(controller_name)
+
+    for match in _KOTLIN_JAXRS_METHOD_RE.finditer(source):
+        http_method = match.group(1)
+        method_path = match.group(2) or ""
+        method_name = match.group(3)
+
+        paren_start = match.end() - 1
+        param_string = _extract_balanced_parens(source, paren_start)
+
+        full_path = class_path
+        if method_path:
+            if not method_path.startswith("/"):
+                method_path = "/" + method_path
+            full_path += method_path
+
+        full_path = _strip_jaxrs_regex(full_path)
+        params = _extract_kotlin_jaxrs_params(param_string)
+
+        result.endpoints.append(SpringEndpoint(
+            http_method=http_method,
+            path=full_path or "/",
+            method_name=method_name,
+            description=_make_description(method_name),
+            parameters=params,
+            return_type="string",
+            source_file=file_info.path,
+            controller_class=controller_name,
+            controller_path=class_path,
+        ))
+
+
+def _analyze_kotlin_spring(source: str, file_info: FileInfo, result: JavaAnalysisResult) -> None:
+    """Extract Spring (Boot / MVC) endpoints from a Kotlin source file."""
+    if "@SpringBootApplication" in source:
+        result.has_spring_boot = True
+
+    controller_match = _KOTLIN_SPRING_CLASS_RE.search(source)
+    if not controller_match:
+        return
+
+    controller_name = controller_match.group(1)
+    result.controllers.append(controller_name)
+
+    class_path = ""
+    class_mapping = _KOTLIN_CLASS_REQUEST_MAPPING_RE.search(source)
+    if class_mapping:
+        class_path = class_mapping.group(1).rstrip("/")
+
+    for match in _KOTLIN_SPRING_METHOD_RE.finditer(source):
+        annotation = match.group(1)
+        method_path = match.group(2) or ""
+        request_method_override = match.group(3)
+        method_name = match.group(4)
+
+        paren_start = match.end() - 1
+        param_string = _extract_balanced_parens(source, paren_start)
+
+        if annotation == "RequestMapping" and request_method_override:
+            http_method = request_method_override
+        elif annotation in _HTTP_METHOD_ANNOTATIONS:
+            http_method = _HTTP_METHOD_ANNOTATIONS[annotation]
+        else:
+            http_method = "GET"
+
+        full_path = class_path
+        if method_path:
+            if not method_path.startswith("/"):
+                method_path = "/" + method_path
+            full_path += method_path
+
+        params = _extract_kotlin_spring_params(param_string)
+        mcp_return = "string"
 
         result.endpoints.append(SpringEndpoint(
             http_method=http_method,
@@ -579,9 +851,15 @@ def java_results_to_capabilities(
     return capabilities
 
 
+def _strip_jaxrs_regex(path: str) -> str:
+    """Normalize JAX-RS regex path params: {id: \\d+} → {id}."""
+    return re.sub(r'\{(\w+)[^}]*\}', r'{\1}', path)
+
+
 def _endpoint_to_tool_name(ep: SpringEndpoint) -> str:
     """Generate a snake_case tool name from an endpoint."""
-    path_parts = ep.path.strip("/").split("/")
+    normalized = _strip_jaxrs_regex(ep.path)
+    path_parts = normalized.strip("/").split("/")
     if path_parts and path_parts[0] in ("api", "v1", "v2", "v3"):
         path_parts = path_parts[1:]
 

@@ -90,56 +90,154 @@ _REQ_QUERY_RE = re.compile(r"req\.query\.(\w+)")
 _REQ_BODY_RE = re.compile(r"req\.body\.(\w+)")
 
 # Destructured params: const { id } = req.params
-_DESTRUCTURE_PARAMS_RE = re.compile(r"(?:const|let|var)\s*\{([^}]+)\}\s*=\s*req\.params")
-_DESTRUCTURE_QUERY_RE = re.compile(r"(?:const|let|var)\s*\{([^}]+)\}\s*=\s*req\.query")
-_DESTRUCTURE_BODY_RE = re.compile(r"(?:const|let|var)\s*\{([^}]+)\}\s*=\s*req\.body")
+# Optional TS type annotation before `=`: const { id }: { id: string } = req.params
+_TS_TYPE_ANNOTATION = r"(?:\s*:\s*\{[^}]*\})?"
+_DESTRUCTURE_PARAMS_RE = re.compile(
+    r"(?:const|let|var)\s*\{([^}]+)\}" + _TS_TYPE_ANNOTATION + r"\s*=\s*req\.params"
+)
+_DESTRUCTURE_QUERY_RE = re.compile(
+    r"(?:const|let|var)\s*\{([^}]+)\}" + _TS_TYPE_ANNOTATION + r"\s*=\s*req\.query"
+)
+_DESTRUCTURE_BODY_RE = re.compile(
+    r"(?:const|let|var)\s*\{([^}]+)\}" + _TS_TYPE_ANNOTATION + r"\s*=\s*req\.body"
+)
+
+# ── TypeScript type-hint patterns ────────────────────────────────────────────
+
+# `as number` / `as string` / `as boolean` cast after req.params/query access
+# e.g.  req.params.id as number   or   req.query.limit as number
+_TS_CAST_RE = re.compile(
+    r"req\.(?:params|query|body)\.(\w+)\s+as\s+(number|string|boolean|integer|float)",
+)
+
+# parseInt / Number / parseFloat applied to a req param
+# e.g.  parseInt(req.params.id)   Number(req.query.page)
+_TS_PARSEINT_RE = re.compile(
+    r"parseInt\s*\(\s*req\.(?:params|query)\.(\w+)",
+)
+_TS_PARSEFLOAT_RE = re.compile(
+    r"parseFloat\s*\(\s*req\.(?:params|query)\.(\w+)",
+)
+_TS_NUMBER_RE = re.compile(
+    r"Number\s*\(\s*req\.(?:params|query)\.(\w+)",
+)
+
+# Typed destructuring: const { id, count }: { id: string; count: number } = req.params
+# Captures the whole type block and the source (params/query/body)
+_TS_TYPED_DESTRUCTURE_RE = re.compile(
+    r"(?:const|let|var)\s*\{[^}]+\}\s*:\s*\{([^}]+)\}\s*=\s*req\.(params|query|body)",
+)
+
+# Within the type block: `name: type`  or  `name?: type`
+_TS_FIELD_TYPE_RE = re.compile(r"(\w+)\??:\s*(number|string|boolean|integer|float)")
+
+# Request<Params, ResBody, Body, Query> generic on handler signature:
+# (req: Request<{ id: string }, any, { name: string }, { page?: number }>, res) => ...
+_TS_REQUEST_GENERIC_RE = re.compile(
+    r"req\s*:\s*Request\s*<\s*"
+    r"\{([^}]*)\}"   # group 1: Params
+    r"(?:\s*,\s*[^,>]+)?"  # skip ResBody
+    r"(?:\s*,\s*\{([^}]*)\})?"  # group 3: Body (optional)
+    r"(?:\s*,\s*\{([^}]*)\})?"  # group 4: Query (optional)
+    r"\s*>",
+    re.DOTALL,
+)
+
+_TS_TYPE_MAP = {
+    "number": "integer",
+    "integer": "integer",
+    "float": "float",
+    "string": "string",
+    "boolean": "boolean",
+}
 
 
-def _extract_params_from_context(source: str, route_pos: int) -> list[ParameterSpec]:
+def _resolve_ts_types(context: str) -> dict[str, str]:
+    """Scan handler context for TypeScript type hints. Returns {param_name: mcp_type}."""
+    hints: dict[str, str] = {}
+
+    # `as number/string/boolean` casts
+    for m in _TS_CAST_RE.finditer(context):
+        hints[m.group(1)] = _TS_TYPE_MAP.get(m.group(2), "string")
+
+    # parseInt / parseFloat / Number wrappers
+    for m in _TS_PARSEINT_RE.finditer(context):
+        hints[m.group(1)] = "integer"
+    for m in _TS_PARSEFLOAT_RE.finditer(context):
+        hints[m.group(1)] = "float"
+    for m in _TS_NUMBER_RE.finditer(context):
+        hints[m.group(1)] = "integer"
+
+    # Typed destructuring blocks
+    for m in _TS_TYPED_DESTRUCTURE_RE.finditer(context):
+        type_block = m.group(1)
+        for field_m in _TS_FIELD_TYPE_RE.finditer(type_block):
+            hints[field_m.group(1)] = _TS_TYPE_MAP.get(field_m.group(2), "string")
+
+    # Request<Params, _, Body, Query> generic
+    req_m = _TS_REQUEST_GENERIC_RE.search(context)
+    if req_m:
+        for block in (req_m.group(1), req_m.group(2), req_m.group(3)):
+            if block:
+                for field_m in _TS_FIELD_TYPE_RE.finditer(block):
+                    hints[field_m.group(1)] = _TS_TYPE_MAP.get(field_m.group(2), "string")
+
+    return hints
+
+
+def _extract_params_from_context(
+    source: str, route_pos: int, is_typescript: bool = False
+) -> list[ParameterSpec]:
     """Extract parameters by scanning the handler body after a route definition."""
-    # Look at the next ~500 chars after the route for the handler body
+    # Look at the next ~800 chars after the route for the handler body
     context = source[route_pos:route_pos + 800]
     params: list[ParameterSpec] = []
     seen: set[str] = set()
+
+    # Pre-compute TypeScript type hints for this handler window
+    ts_types: dict[str, str] = _resolve_ts_types(context) if is_typescript else {}
+
+    def _type_of(name: str, default: str) -> str:
+        return ts_types.get(name, default)
 
     # Path params from req.params.X or destructured
     for match in _REQ_PARAM_RE.finditer(context):
         name = match.group(1)
         if name not in seen:
             seen.add(name)
-            params.append(ParameterSpec(name=name, type="string", required=True))
+            params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=True))
     for match in _DESTRUCTURE_PARAMS_RE.finditer(context):
         for name in re.split(r"\s*,\s*", match.group(1).strip()):
-            name = name.strip()
+            name = name.strip().split("=")[0].strip()  # strip default value
             if name and name not in seen:
                 seen.add(name)
-                params.append(ParameterSpec(name=name, type="string", required=True))
+                params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=True))
 
     # Query params from req.query.X or destructured
     for match in _REQ_QUERY_RE.finditer(context):
         name = match.group(1)
         if name not in seen:
             seen.add(name)
-            params.append(ParameterSpec(name=name, type="string", required=False))
+            params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=False))
     for match in _DESTRUCTURE_QUERY_RE.finditer(context):
         for name in re.split(r"\s*,\s*", match.group(1).strip()):
-            name = name.strip()
+            name = name.strip().split("=")[0].strip()  # strip default value
             if name and name not in seen:
                 seen.add(name)
-                params.append(ParameterSpec(name=name, type="string", required=False))
+                params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=False))
 
     # Body params from req.body.X or destructured
     for match in _REQ_BODY_RE.finditer(context):
         name = match.group(1)
         if name not in seen:
             seen.add(name)
-            params.append(ParameterSpec(name=name, type="string", required=True))
+            params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=True))
     for match in _DESTRUCTURE_BODY_RE.finditer(context):
         for name in re.split(r"\s*,\s*", match.group(1).strip()):
-            name = name.strip()
+            name = name.strip().split("=")[0].strip()  # strip default value
             if name and name not in seen:
                 seen.add(name)
-                params.append(ParameterSpec(name=name, type="string", required=True))
+                params.append(ParameterSpec(name=name, type=_type_of(name, "string"), required=True))
 
     return params
 
@@ -220,6 +318,7 @@ def analyze_express_file(
             return None
 
     result = ExpressAnalysisResult()
+    is_typescript = file_info.language == Language.TYPESCRIPT
 
     if "Router()" in source:
         result.has_routers = True
@@ -256,7 +355,7 @@ def analyze_express_file(
                 break
 
             path_params = _extract_path_params(chain_path)
-            body_params = _extract_params_from_context(source, match.end() + method_match.start())
+            body_params = _extract_params_from_context(source, match.end() + method_match.start(), is_typescript)
 
             seen_names = {p.name for p in path_params}
             all_params = list(path_params)
@@ -305,7 +404,15 @@ def analyze_express_file(
 
         # Extract parameters from path and handler body
         path_params = _extract_path_params(path)
-        body_params = _extract_params_from_context(source, match.start())
+        body_params = _extract_params_from_context(source, match.start(), is_typescript)
+
+        # For TypeScript: apply type hints to path params too (e.g. parseInt infers integer)
+        if is_typescript:
+            context = source[match.start():match.start() + 800]
+            ts_types = _resolve_ts_types(context)
+            for p in path_params:
+                if p.name in ts_types:
+                    p.type = ts_types[p.name]
 
         # Merge: path params first, then body params (avoiding duplicates)
         seen_names = {p.name for p in path_params}

@@ -31,6 +31,16 @@ def fake_jaxrs_app(fixtures_dir) -> Path:
 
 
 @pytest.fixture
+def fake_kotlin_jaxrs_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_kotlin_jaxrs_app"
+
+
+@pytest.fixture
+def fake_kotlin_spring_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_kotlin_spring_app"
+
+
+@pytest.fixture
 def fake_micronaut_app(fixtures_dir) -> Path:
     return fixtures_dir / "fake_micronaut_app"
 
@@ -48,6 +58,11 @@ def fake_flask_app(fixtures_dir) -> Path:
 @pytest.fixture
 def fake_express_app(fixtures_dir) -> Path:
     return fixtures_dir / "fake_express_app"
+
+
+@pytest.fixture
+def fake_ts_express_app(fixtures_dir) -> Path:
+    return fixtures_dir / "fake_ts_express_app"
 
 
 @pytest.fixture
