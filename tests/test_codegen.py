@@ -136,6 +136,37 @@ class TestEmitter:
 
         assert any("test_tools.py" in f for f in files)
         assert any("conftest.py" in f for f in files)
+        assert any("test_backend.py" in f for f in files)
+        assert any("test_runtime.py" in f for f in files)
+
+    def test_generated_tests_are_behavioral(self, sample_design, tmp_path):
+        emitter = Emitter(sample_design, tmp_path)
+        emitter.emit_all()
+        emitter.emit_tests()
+
+        test_tools = (tmp_path / "tests" / "test_tools.py").read_text()
+        assert "server.call_tool" in test_tools
+        assert "AsyncMock" in test_tools
+        assert "pass" not in test_tools
+        if any(not param.required for tool in sample_design.tools for param in tool.parameters):
+            assert "omits_optional_parameters" in test_tools
+        if any(
+            tool.impl.strategy in {"http_call", "protocol_call"}
+            for tool in sample_design.tools
+        ):
+            assert "backend-failed" in test_tools
+
+        test_protocol = (tmp_path / "tests" / "test_protocol.py").read_text()
+        assert "list_tools" in test_protocol
+        assert "read_resource" in test_protocol
+        assert "generation_status" in test_protocol
+
+        test_backend = (tmp_path / "tests" / "test_backend.py").read_text()
+        assert "Unit tests for the generated" in test_backend
+
+        test_runtime = (tmp_path / "tests" / "test_runtime.py").read_text()
+        assert "mcp.json" in test_runtime
+        assert "server_module.main()" in test_runtime
 
     def test_emit_packaging(self, sample_design, tmp_path):
         emitter = Emitter(sample_design, tmp_path)
@@ -152,6 +183,8 @@ class TestEmitter:
         assert any("README.md" in f for f in files)
         readme = (tmp_path / "README.md").read_text()
         assert "process_file" in readme
+        assert "Implementation status:" in readme
+        assert "Status meanings:" in readme
 
     def test_backend_generated(self, sample_design, tmp_path):
         emitter = Emitter(sample_design, tmp_path)

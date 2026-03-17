@@ -1,19 +1,476 @@
 """Tests for {{ design.server_name }} MCP server tools."""
 
+import asyncio
+import importlib
+import json
+import types
+from unittest.mock import AsyncMock
+
 import pytest
+{% set has_http_tools = tools | selectattr('impl.strategy', 'equalto', 'http_call') | list | length > 0 %}
+{% set has_protocol_tools = tools | selectattr('impl.strategy', 'equalto', 'protocol_call') | list | length > 0 %}
+{% if has_http_tools or has_protocol_tools %}
+
+from {{ package_name }}.backend import BackendError
+{% endif %}
+
+{% macro sample_value(type_name, name) -%}
+{%- set normalized = type_name.lower() -%}
+{%- if normalized == "integer" -%}
+7
+{%- elif normalized == "float" or normalized == "number" -%}
+1.5
+{%- elif normalized == "boolean" -%}
+True
+{%- elif normalized == "array" or normalized == "list" -%}
+["sample_{{ name }}"]
+{%- elif normalized == "object" or normalized == "dict" -%}
+{"value": "sample_{{ name }}"}
+{%- else -%}
+"sample_{{ name }}"
+{%- endif -%}
+{%- endmacro %}
+
+
+def _run(awaitable):
+    """Run an async FastMCP helper from a synchronous pytest test."""
+    return asyncio.run(awaitable)
+
+
+def _tool_map(server):
+    """Return registered tools keyed by tool name."""
+    return {tool.name: tool for tool in _run(server.list_tools())}
+
+
+def _extract_text_result(result):
+    """Extract the text payload from FastMCP call_tool()."""
+    contents = result[0] if isinstance(result, tuple) else result
+    assert isinstance(contents, list)
+    assert contents, "tool returned no content"
+    first = contents[0]
+    return getattr(first, "text", str(first))
 
 
 class TestToolRegistration:
-    """Verify all tools are registered."""
+    """Verify generated tools are registered with the expected schemas."""
 
     def test_server_has_tools(self, server):
-        """Server should have registered tools."""
-        assert server is not None
+        tools = _tool_map(server)
+        assert len(tools) == {{ design.tools | length }}
+
+    @pytest.mark.parametrize(
+        ("tool_name", "property_names", "required_names"),
+        [
+{% for tool in design.tools %}
+            (
+                "{{ tool.name }}",
+                [
+{% for param in tool.parameters %}
+                    "{{ param.name }}",
+{% endfor %}
+{% if tool.impl.strategy == "python_call" and tool.impl.python_class %}
+{% for ip in tool.impl.python_init_params %}
+{% if ip.required and not ip.default and ip.name != "self" %}
+                    "init_{{ ip.name | safe_identifier }}",
+{% endif %}
+{% endfor %}
+{% endif %}
+                ],
+                [
+{% for param in tool.parameters %}
+{% if param.required %}
+                    "{{ param.name }}",
+{% endif %}
+{% endfor %}
+{% if tool.impl.strategy == "python_call" and tool.impl.python_class %}
+{% for ip in tool.impl.python_init_params %}
+{% if ip.required and not ip.default and ip.name != "self" %}
+                    "init_{{ ip.name | safe_identifier }}",
+{% endif %}
+{% endfor %}
+{% endif %}
+                ],
+            ),
+{% endfor %}
+        ],
+    )
+    def test_tool_schema_matches_design(self, server, tool_name, property_names, required_names):
+        tools = _tool_map(server)
+        assert tool_name in tools
+        schema = tools[tool_name].inputSchema or {}
+        assert sorted(schema.get("properties", {}).keys()) == sorted(property_names)
+        assert sorted(schema.get("required", [])) == sorted(required_names)
+
+
+{% set ns = namespace(has_optional_param_tools=false) %}
+{% for tool in design.tools %}
+{% if tool.parameters | rejectattr('required') | list %}
+{% set ns.has_optional_param_tools = true %}
+{% endif %}
+{% endfor %}
+{% if ns.has_optional_param_tools %}
+class TestOptionalParameterHandling:
+    """Verify omitted optional parameters are not forwarded downstream."""
 
 {% for tool in design.tools %}
-    def test_{{ tool.name }}_registered(self, server):
-        """{{ tool.name }} tool should be registered."""
-        # Tool registration is verified by import
-        pass
+{% set optional_params = tool.parameters | rejectattr('required') | list %}
+{% if optional_params %}
+    def test_{{ tool.name }}_omits_optional_parameters(self, server, server_module, monkeypatch):
+        tool_input = {
+{% for param in tool.parameters %}
+{% if param.required %}
+            "{{ param.name }}": {{ sample_value(param.type, param.name) }},
+{% endif %}
+{% endfor %}
+        }
+{% if tool.impl.strategy == "http_call" %}
+        mock_request = AsyncMock(return_value="http-call-ok")
+        monkeypatch.setattr(server_module._backend, "request", mock_request)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "http-call-ok"
+        kwargs = mock_request.await_args.kwargs
+        assert kwargs["params"] == (
+            {% set ns = namespace(has_items=false) %}{% for param in tool.parameters %}{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") not in ("path", "body") %}{% set ns.has_items = true %}{% endif %}{% endfor %}{% if ns.has_items %}{
+{% for param in tool.parameters %}
+{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") not in ("path", "body") %}
+            "{{ param.name }}": str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %}
+        )
+        assert kwargs["body"] == (
+            {% set ns = namespace(has_body=false) %}{% for param in tool.parameters %}{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") == "body" %}{% set ns.has_body = true %}{% endif %}{% endfor %}{% if ns.has_body %}{
+{% for param in tool.parameters %}
+{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") == "body" %}
+            "value": "sample_{{ param.name }}",
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %}
+        )
+        assert kwargs["path_params"] == (
+            {% set ns = namespace(has_path=false) %}{% for param in tool.parameters %}{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") == "path" %}{% set ns.has_path = true %}{% endif %}{% endfor %}{% if ns.has_path %}{
+{% for param in tool.parameters %}
+{% if param.required and tool.impl.arg_mapping.get(param.name, {}).get("style") == "path" %}
+            "{{ param.name }}": str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %}
+        )
+{% elif tool.impl.strategy == "cli_subcommand" %}
+        mock_run = AsyncMock(return_value="cli-subcommand-ok")
+        monkeypatch.setattr(server_module._backend, "run_subcommand", mock_run)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "cli-subcommand-ok"
+        mock_run.assert_awaited_once_with(
+            "{{ tool.impl.cli_subcommand }}",
+            [
+{% for param in tool.parameters %}
+{% if param.required %}
+{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "passthrough" %}
+{% for token in (sample_value(param.type, param.name) | replace('"', '')).split() %}
+                "{{ token }}",
+{% endfor %}
+{% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "flag" %}
+{% if param.type == "boolean" %}
+                "{{ tool.impl.arg_mapping[param.name]['flag'] }}",
+{% else %}
+                "{{ tool.impl.arg_mapping[param.name]['flag'] }}",
+                str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% else %}
+                str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endif %}
+{% endfor %}
+            ],
+        )
+{% elif tool.impl.strategy == "cli_function" %}
+        mock_run = AsyncMock(return_value="cli-function-ok")
+        monkeypatch.setattr(server_module._backend, "run_function_as_cli", mock_run)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "cli-function-ok"
+        mock_run.assert_awaited_once_with(
+            "{{ tool.impl.cli_entry }}",
+            "{{ tool.impl.python_function }}",
+{% for param in tool.parameters %}
+{% if param.required %}
+            {{ param.name | safe_identifier }}=tool_input["{{ param.name }}"],
+{% endif %}
+{% endfor %}
+        )
+{% elif tool.impl.strategy == "protocol_call" %}
+        mock_execute = AsyncMock(return_value="protocol-call-ok")
+        monkeypatch.setattr(server_module._backend, "execute", mock_execute)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "protocol-call-ok"
+        mock_execute.assert_awaited_once_with(
+            "{{ tool.name }}",
+{% for param in tool.parameters %}
+{% if param.required %}
+            {{ param.name }}=tool_input["{{ param.name }}"],
+{% endif %}
+{% endfor %}
+        )
+{% elif tool.impl.strategy == "python_call" %}
+        tool_module = importlib.import_module("{{ package_name }}.tools.{{ tool.module }}")
+        monkeypatch.setattr(tool_module, "_setup_import_path", lambda *_args, **_kwargs: None)
+        captured = {}
+{% if tool.impl.python_class %}
+
+        class FakeClass:
+            def __init__(self, **kwargs):
+                captured["init"] = kwargs
+
+            def {{ tool.impl.python_function }}(self, **kwargs):
+                captured["args"] = kwargs
+                return "python-call-ok"
+
+        fake_module = types.SimpleNamespace({{ tool.impl.python_class }}=FakeClass)
+{% else %}
+        def fake_function(**kwargs):
+            captured["args"] = kwargs
+            return "python-call-ok"
+
+        fake_module = types.SimpleNamespace({{ tool.impl.python_function }}=fake_function)
+{% endif %}
+        monkeypatch.setattr(tool_module, "_load_source_module", lambda *_args, **_kwargs: fake_module)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "python-call-ok"
+        assert captured["args"] == {
+{% for param in tool.parameters %}
+{% if param.required %}
+            "{{ param.name }}": tool_input["{{ param.name }}"],
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+
+{% endif %}
+{% endfor %}
+
+
+{% endif %}
+{% if has_http_tools or has_protocol_tools %}
+class TestToolErrorHandling:
+    """Verify backend failures are surfaced predictably."""
+
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input", "strategy"),
+        [
+{% for tool in tools %}
+{% if tool.impl.strategy in ["http_call", "protocol_call"] %}
+            (
+                "{{ tool.name }}",
+                {
+{% for param in tool.parameters %}
+                    "{{ param.name }}": {{ sample_value(param.type, param.name) }},
+{% endfor %}
+                },
+                "{{ tool.impl.strategy }}",
+            ),
+{% endif %}
+{% endfor %}
+        ],
+    )
+    def test_backend_error_is_serialized(self, server, server_module, monkeypatch, tool_name, tool_input, strategy):
+        if strategy == "http_call":
+            error = BackendError(
+                "backend-failed",
+                status_code=502,
+                method="GET",
+                path="/failure",
+                response_body="upstream error",
+            )
+            monkeypatch.setattr(server_module._backend, "request", AsyncMock(side_effect=error))
+        else:
+            error = BackendError(
+                "backend-failed",
+                method=tool_name,
+                response_body="upstream error",
+            )
+            monkeypatch.setattr(server_module._backend, "execute", AsyncMock(side_effect=error))
+
+        result = _run(server.call_tool(tool_name, tool_input))
+
+        payload = json.loads(_extract_text_result(result))
+        assert payload["error"] == "backend-failed"
+        assert payload["response_body"] == "upstream error"
+        if strategy == "http_call":
+            assert payload["status_code"] == 502
+            assert payload["path"] == "/failure"
+        else:
+            assert payload["method"] == tool_name
+{% endif %}
+
+
+class TestToolExecution:
+    """Execute generated tool handlers with mocked dependencies."""
+
+{% for tool in design.tools %}
+    def test_{{ tool.name }}_behavior(self, server, server_module, monkeypatch):
+        tool_input = {
+{% for param in tool.parameters %}
+            "{{ param.name }}": {{ sample_value(param.type, param.name) }},
+{% endfor %}
+{% if tool.impl.strategy == "python_call" and tool.impl.python_class %}
+{% for ip in tool.impl.python_init_params %}
+{% if ip.required and not ip.default and ip.name != "self" %}
+            "init_{{ ip.name | safe_identifier }}": {{ sample_value(ip.type, ip.name) }},
+{% endif %}
+{% endfor %}
+{% endif %}
+        }
+{% if tool.impl.strategy == "http_call" %}
+        mock_request = AsyncMock(return_value="http-call-ok")
+        monkeypatch.setattr(server_module._backend, "request", mock_request)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "http-call-ok"
+        mock_request.assert_awaited_once_with(
+            "{{ tool.impl.http_method }}",
+            "{{ tool.impl.http_path }}",
+            params={% set ns = namespace(has_items=false) %}{% for param in tool.parameters %}{% if tool.impl.arg_mapping.get(param.name, {}).get("style") not in ("path", "body") %}{% set ns.has_items = true %}{% endif %}{% endfor %}{% if ns.has_items %}{
+{% for param in tool.parameters %}
+{% if tool.impl.arg_mapping.get(param.name, {}).get("style") not in ("path", "body") %}
+                "{{ param.name }}": str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %},
+            body={% set ns = namespace(has_body=false) %}{% for param in tool.parameters %}{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "body" %}{% set ns.has_body = true %}{% endif %}{% endfor %}{% if ns.has_body %}{
+{% for param in tool.parameters %}
+{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "body" %}
+                "value": "sample_{{ param.name }}",
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %},
+            path_params={% set ns = namespace(has_path=false) %}{% for param in tool.parameters %}{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "path" %}{% set ns.has_path = true %}{% endif %}{% endfor %}{% if ns.has_path %}{
+{% for param in tool.parameters %}
+{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "path" %}
+                "{{ param.name }}": str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endfor %}
+            }{% else %}None{% endif %},
+        )
+{% elif tool.impl.strategy == "cli_subcommand" %}
+        mock_run = AsyncMock(return_value="cli-subcommand-ok")
+        monkeypatch.setattr(server_module._backend, "run_subcommand", mock_run)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "cli-subcommand-ok"
+        mock_run.assert_awaited_once_with(
+            "{{ tool.impl.cli_subcommand }}",
+            [
+{% for param in tool.parameters %}
+{% if tool.impl.arg_mapping.get(param.name, {}).get("style") == "passthrough" %}
+{% for token in (sample_value(param.type, param.name) | replace('"', '')).split() %}
+                "{{ token }}",
+{% endfor %}
+{% elif tool.impl.arg_mapping.get(param.name, {}).get("style") == "flag" %}
+{% if param.type == "boolean" %}
+                "{{ tool.impl.arg_mapping[param.name]['flag'] }}",
+{% else %}
+                "{{ tool.impl.arg_mapping[param.name]['flag'] }}",
+                str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% else %}
+                str(tool_input["{{ param.name }}"]),
+{% endif %}
+{% endfor %}
+            ],
+        )
+{% elif tool.impl.strategy == "cli_function" %}
+        mock_run = AsyncMock(return_value="cli-function-ok")
+        monkeypatch.setattr(server_module._backend, "run_function_as_cli", mock_run)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "cli-function-ok"
+        mock_run.assert_awaited_once_with(
+            "{{ tool.impl.cli_entry }}",
+            "{{ tool.impl.python_function }}",
+{% for param in tool.parameters %}
+            {{ param.name | safe_identifier }}=tool_input["{{ param.name }}"],
+{% endfor %}
+        )
+{% elif tool.impl.strategy == "protocol_call" %}
+        mock_execute = AsyncMock(return_value="protocol-call-ok")
+        monkeypatch.setattr(server_module._backend, "execute", mock_execute)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "protocol-call-ok"
+        mock_execute.assert_awaited_once_with(
+            "{{ tool.name }}",
+{% for param in tool.parameters %}
+            {{ param.name }}=tool_input["{{ param.name }}"],
+{% endfor %}
+        )
+{% elif tool.impl.strategy == "python_call" %}
+        tool_module = importlib.import_module("{{ package_name }}.tools.{{ tool.module }}")
+        monkeypatch.setattr(tool_module, "_setup_import_path", lambda *_args, **_kwargs: None)
+        captured = {}
+{% if tool.impl.python_class %}
+
+        class FakeClass:
+            def __init__(self, **kwargs):
+                captured["init"] = kwargs
+
+            def {{ tool.impl.python_function }}(self, **kwargs):
+                captured["args"] = kwargs
+                return "python-call-ok"
+
+        fake_module = types.SimpleNamespace({{ tool.impl.python_class }}=FakeClass)
+{% else %}
+        def fake_function(**kwargs):
+            captured["args"] = kwargs
+            return "python-call-ok"
+
+        fake_module = types.SimpleNamespace({{ tool.impl.python_function }}=fake_function)
+{% endif %}
+        monkeypatch.setattr(tool_module, "_load_source_module", lambda *_args, **_kwargs: fake_module)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "python-call-ok"
+        assert captured["args"] == {
+{% for param in tool.parameters %}
+            "{{ param.name }}": tool_input["{{ param.name }}"],
+{% endfor %}
+        }
+{% if tool.impl.python_class %}
+        assert captured.get("init", {}) == {
+{% for ip in tool.impl.python_init_params %}
+{% if ip.required and not ip.default and ip.name != "self" %}
+            "{{ ip.name }}": tool_input["init_{{ ip.name | safe_identifier }}"],
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+{% else %}
+{% if design.backend %}
+        mock_run = AsyncMock(return_value="stub-ok")
+        monkeypatch.setattr(server_module._backend, "run_subcommand", mock_run)
+
+        result = _run(server.call_tool("{{ tool.name }}", tool_input))
+
+        assert _extract_text_result(result) == "stub-ok"
+        mock_run.assert_awaited_once_with("{{ tool.name }}")
+{% else %}
+        with pytest.raises(Exception, match="not yet implemented"):
+            _run(server.call_tool("{{ tool.name }}", tool_input))
+{% endif %}
+{% endif %}
 
 {% endfor %}

@@ -39,6 +39,9 @@ class ToolSpec(BaseModel):
     module: str = ""
     ipc_type: Optional[IPCType] = None
     implementation_hint: str = ""
+    generation_status: str = "ready"  # "ready", "proxy", "scaffolded", "stubbed"
+    generation_notes: str = ""
+    manual_steps: list[str] = Field(default_factory=list)
     impl: ToolImpl = Field(default_factory=ToolImpl)
 
 

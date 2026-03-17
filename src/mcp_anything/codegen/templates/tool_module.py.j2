@@ -206,7 +206,11 @@ def register_tools(server: FastMCP{% if design.backend %}, backend{% endif %}{% 
             "{{ tool.impl.cli_entry }}",
             "{{ tool.impl.python_function }}",
         {% for param in tool.parameters %}
+            {% if param.required %}
             {{ param.name | safe_identifier }}={{ param.name | safe_identifier }},
+            {% else %}
+            **({"{{ param.name }}": {{ param.name | safe_identifier }}} if {{ param.name | safe_identifier }} is not None else {}),
+            {% endif %}
         {% endfor %}
         )
     {% elif tool.impl.strategy == "protocol_call" %}

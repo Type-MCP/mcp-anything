@@ -1,0 +1,106 @@
+"""Runtime validation tests for the generated {{ design.server_name }} package."""
+
+import asyncio
+import json
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+
+def _run(awaitable):
+    """Run async FastMCP helpers in synchronous pytest tests."""
+    return asyncio.run(awaitable)
+
+
+class TestPackageRuntime:
+    """Validate generated package coherence across startup surfaces."""
+
+    def test_pyproject_has_console_entrypoint(self):
+        pyproject = Path("pyproject.toml").read_text()
+        assert '[project.scripts]' in pyproject
+        assert 'mcp-{{ design.server_name | kebab_case }} = "{{ package_name }}.server:main"' in pyproject
+
+    def test_mcp_config_matches_transport(self):
+        config = json.loads(Path("mcp.json").read_text())
+        server_entry = config["mcpServers"]["{{ design.server_name | replace('_', '-') }}"]
+{% if design.transport == "http" %}
+        assert server_entry["url"] == "http://localhost:{{ design.http_port }}/sse"
+{% else %}
+        assert server_entry["command"] == "mcp-{{ design.server_name | replace('_', '-') }}"
+        assert server_entry["args"] == []
+{% endif %}
+
+    def test_server_startup_default_transport(self, server_module, monkeypatch):
+        mock_run = MagicMock()
+        monkeypatch.setattr(server_module.server, "run", mock_run)
+        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("MCP_HOST", raising=False)
+        monkeypatch.delenv("MCP_PORT", raising=False)
+
+        server_module.main()
+
+{% if design.transport == "http" %}
+        mock_run.assert_called_once_with(
+            transport="sse",
+            host="{{ design.http_host }}",
+            port={{ design.http_port }},
+        )
+{% else %}
+        mock_run.assert_called_once_with(transport="stdio")
+{% endif %}
+
+    def test_server_startup_transport_override(self, server_module, monkeypatch):
+        mock_run = MagicMock()
+        monkeypatch.setattr(server_module.server, "run", mock_run)
+{% if design.transport == "http" %}
+        monkeypatch.setenv("MCP_TRANSPORT", "stdio")
+        monkeypatch.delenv("MCP_HOST", raising=False)
+        monkeypatch.delenv("MCP_PORT", raising=False)
+
+        server_module.main()
+
+        mock_run.assert_called_once_with(transport="stdio")
+{% else %}
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
+        monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("MCP_PORT", "9100")
+
+        server_module.main()
+
+        mock_run.assert_called_once_with(
+            transport="sse",
+            host="127.0.0.1",
+            port=9100,
+        )
+{% endif %}
+
+{% if design.backend %}
+    def test_backend_instance_is_available(self, server_module):
+        assert hasattr(server_module, "_backend")
+        backend = server_module._backend
+{% if design.tools | selectattr('impl.strategy', 'equalto', 'http_call') | list | length > 0 %}
+        assert hasattr(backend, "request")
+{% endif %}
+{% if design.tools | selectattr('impl.strategy', 'equalto', 'protocol_call') | list | length > 0 %}
+        assert hasattr(backend, "execute")
+{% endif %}
+{% if design.tools | selectattr('impl.strategy', 'equalto', 'cli_subcommand') | list | length > 0 %}
+        assert hasattr(backend, "run_subcommand")
+{% endif %}
+{% if design.tools | selectattr('impl.strategy', 'equalto', 'cli_function') | list | length > 0 %}
+        assert hasattr(backend, "run_function_as_cli")
+{% endif %}
+{% else %}
+    def test_backend_instance_not_required(self, server_module):
+        assert not hasattr(server_module, "_backend")
+{% endif %}
+
+    def test_registered_runtime_surfaces(self, server):
+        assert len(_run(server.list_tools())) == {{ design.tools | length }}
+{% if design.resources %}
+        assert len(_run(server.list_resources())) == {{ design.resources | length }}
+{% endif %}
+{% if design.prompts %}
+        assert len(_run(server.list_prompts())) == {{ design.prompts | length }}
+{% endif %}

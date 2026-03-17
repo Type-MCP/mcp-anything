@@ -16,6 +16,7 @@ from mcp_anything.models.design import (
     ToolSpec,
 )
 from mcp_anything.pipeline.design import (
+    _assign_generation_status,
     _generate_prompts,
     _generate_doc_resources,
     _generate_resources,
@@ -184,6 +185,25 @@ class TestDocResources:
         assert any(r.resource_type == "docs" for r in resources)
 
 
+class TestGenerationStatus:
+    def test_http_tools_are_marked_proxy(self):
+        design = _make_design()
+        tool = design.tools[0]
+
+        _assign_generation_status(tool, design.backend)
+
+        assert tool.generation_status == "proxy"
+        assert "HTTP API" in tool.generation_notes
+
+    def test_stub_tools_are_marked_stubbed(self):
+        tool = ToolSpec(name="todo", description="Not wired yet")
+
+        _assign_generation_status(tool, None)
+
+        assert tool.generation_status == "stubbed"
+        assert tool.manual_steps
+
+
 class TestAgentsMd:
     def test_agents_md_generated(self, tmp_path):
         design = _make_design()
@@ -202,6 +222,7 @@ class TestAgentsMd:
         content = (tmp_path / "AGENTS.md").read_text()
         assert "limit" in content
         assert "Available Tools" in content
+        assert "Implementation status:" in content
 
     def test_agents_md_http_config(self, tmp_path):
         design = _make_design("http")

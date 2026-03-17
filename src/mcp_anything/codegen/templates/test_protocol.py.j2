@@ -1,12 +1,127 @@
 """Protocol compliance tests for {{ design.server_name }} MCP server."""
 
+import asyncio
+import json
+
 import pytest
+
+{% macro sample_value(type_name, name) -%}
+{%- set normalized = type_name.lower() -%}
+{%- if normalized == "integer" -%}
+7
+{%- elif normalized == "float" or normalized == "number" -%}
+1.5
+{%- elif normalized == "boolean" -%}
+True
+{%- elif normalized == "array" or normalized == "list" -%}
+["sample_{{ name }}"]
+{%- elif normalized == "object" or normalized == "dict" -%}
+{"value": "sample_{{ name }}"}
+{%- else -%}
+"sample_{{ name }}"
+{%- endif -%}
+{%- endmacro %}
+
+
+def _run(awaitable):
+    """Run async FastMCP helpers in synchronous pytest tests."""
+    return asyncio.run(awaitable)
+
+
+def _resource_text(contents):
+    """Extract plain text from FastMCP read_resource()."""
+    assert isinstance(contents, list)
+    assert contents, "resource returned no content"
+    first = contents[0]
+    return getattr(first, "content", str(first))
 
 
 class TestMCPCompliance:
-    """Verify MCP protocol compliance."""
+    """Verify generated server integration points."""
 
     def test_server_creation(self, server):
-        """Server should be created successfully."""
         assert server is not None
         assert server.name == "{{ design.server_name }}"
+
+    def test_registered_tools_match_design(self, server):
+        tools = _run(server.list_tools())
+        names = {tool.name for tool in tools}
+        assert names == {
+{% for tool in design.tools %}
+            "{{ tool.name }}",
+{% endfor %}
+        }
+
+{% if design.resources %}
+    def test_registered_resources_match_design(self, server):
+        resources = _run(server.list_resources())
+        uris = {str(resource.uri) for resource in resources}
+        assert uris == {
+{% for resource in design.resources %}
+            "{{ resource.uri }}",
+{% endfor %}
+        }
+
+    def test_commands_resource_lists_tools(self, server):
+        payload = _resource_text(_run(server.read_resource("app://{{ design.server_name }}/commands")))
+        data = json.loads(payload)
+        command_names = {item["name"] for item in data["commands"]}
+        assert {
+{% for tool in design.tools %}
+            "{{ tool.name }}",
+{% endfor %}
+        }.issubset(command_names)
+        for item in data["commands"]:
+            assert item["generation_status"] in {"ready", "proxy", "scaffolded", "stubbed"}
+            assert "generation_notes" in item
+            assert "manual_steps" in item
+
+{% for resource in design.resources %}
+    def test_reads_resource_{{ loop.index }}(self, server):
+        payload = _resource_text(_run(server.read_resource("{{ resource.uri }}")))
+{% if resource.resource_type in ("status", "commands", "config", "docs") %}
+        data = json.loads(payload)
+        assert isinstance(data, dict)
+{% if resource.resource_type == "status" %}
+        assert data["name"] == "{{ design.server_name }}"
+        assert "tool_generation" in data
+{% elif resource.resource_type == "docs" %}
+        assert data["server"] == "{{ design.server_name }}"
+        for entry in data["tools"]:
+            assert entry["generation_status"] in {"ready", "proxy", "scaffolded", "stubbed"}
+            assert "implementation_hint" in entry
+{% elif resource.resource_type == "commands" %}
+        assert "commands" in data
+{% else %}
+        assert payload
+{% endif %}
+{% else %}
+        assert payload
+{% endif %}
+
+{% endfor %}
+{% endif %}
+
+{% if design.prompts %}
+    def test_registered_prompts_match_design(self, server):
+        prompts = _run(server.list_prompts())
+        names = {prompt.name for prompt in prompts}
+        assert names == {
+{% for prompt in design.prompts %}
+            "{{ prompt.name }}",
+{% endfor %}
+        }
+
+{% for prompt in design.prompts %}
+    def test_get_prompt_{{ prompt.name }}(self, server):
+        prompt_result = _run(server.get_prompt("{{ prompt.name }}", {
+{% for arg in prompt.arguments %}
+            "{{ arg.name }}": {{ sample_value(arg.type, arg.name) }},
+{% endfor %}
+        }))
+        assert prompt_result.messages
+        message = prompt_result.messages[0]
+        assert getattr(message.content, "text", "")
+
+{% endfor %}
+{% endif %}

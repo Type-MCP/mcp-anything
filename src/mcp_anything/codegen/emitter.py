@@ -4,6 +4,7 @@ from pathlib import Path
 
 from mcp_anything.codegen.renderer import create_jinja_env
 from mcp_anything.models.design import ServerDesign
+from mcp_anything.pipeline.design import _assign_generation_status
 
 
 class Emitter:
@@ -17,6 +18,10 @@ class Emitter:
         base_name = design.server_name.replace("-", "_")
         self.package_name = f"mcp_{base_name}"
         self.generated_files: list[str] = []
+        for tool in self.design.tools:
+            if tool.generation_notes or tool.manual_steps or tool.generation_status != "ready":
+                continue
+            _assign_generation_status(tool, self.design.backend)
 
     def _write(self, rel_path: str, content: str) -> None:
         """Write content to a file relative to output_dir."""
@@ -48,6 +53,8 @@ class Emitter:
         self._emit_test_conftest()
         self._emit_test_tools()
         self._emit_test_protocol()
+        self._emit_test_backend()
+        self._emit_test_runtime()
         return self.generated_files[start:]
 
     def emit_docs(self) -> list[str]:
@@ -138,6 +145,16 @@ class Emitter:
     def _emit_test_protocol(self) -> None:
         content = self._render("test_protocol.py.j2")
         self._write("tests/test_protocol.py", content)
+
+    def _emit_test_backend(self) -> None:
+        if not self.design.backend:
+            return
+        content = self._render("test_backend.py.j2")
+        self._write("tests/test_backend.py", content)
+
+    def _emit_test_runtime(self) -> None:
+        content = self._render("test_runtime.py.j2")
+        self._write("tests/test_runtime.py", content)
 
     def _emit_readme(self) -> None:
         content = self._render("readme.md.j2")

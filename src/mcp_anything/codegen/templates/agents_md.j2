@@ -4,16 +4,36 @@
 
 ## Available Tools
 
+Status meanings:
+- `ready`: direct implementation was generated
+- `proxy`: calls a supported upstream backend
+- `scaffolded`: generated code needs manual wiring before production use
+- `stubbed`: no implementation was generated
+
 {% for tool in design.tools %}
 ### {{ tool.name }}
 
 {{ tool.description }}
+
+Implementation status: `{{ tool.generation_status }}`
+{% if tool.generation_notes %}
+Notes: {{ tool.generation_notes }}
+{% endif %}
+{% if tool.implementation_hint %}
+Source hint: `{{ tool.implementation_hint }}`
+{% endif %}
 
 {% if tool.parameters %}
 Parameters:
 {% for param in tool.parameters %}
 - `{{ param.name }}` ({{ param.type }}{% if not param.required %}, optional{% endif %}): {{ param.description }}{% if param.default %} (default: {{ param.default }}){% endif %}{% if param.enum_values %} — one of: {{ param.enum_values | join(', ') }}{% endif %}
 
+{% endfor %}
+{% endif %}
+{% if tool.manual_steps %}
+Manual steps:
+{% for step in tool.manual_steps %}
+- {{ step }}
 {% endfor %}
 {% endif %}
 {% endfor %}

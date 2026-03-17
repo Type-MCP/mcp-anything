@@ -35,6 +35,79 @@ def _capability_to_tool(cap: Capability, primary_ipc: Optional[IPCType] = None) 
     )
 
 
+def _assign_generation_status(tool: ToolSpec, backend: Optional[BackendConfig]) -> ToolSpec:
+    """Annotate a tool with generation readiness metadata."""
+    if tool.impl.strategy == "stub":
+        tool.generation_status = "stubbed"
+        tool.generation_notes = "No executable implementation was generated for this capability."
+        tool.manual_steps = [
+            "Implement the tool logic manually or provide an explicit backend mapping.",
+        ]
+        return tool
+
+    if tool.impl.strategy == "python_call":
+        tool.generation_status = "ready"
+        tool.generation_notes = "Calls the target Python module directly."
+        return tool
+
+    if tool.impl.strategy == "http_call":
+        tool.generation_status = "proxy"
+        tool.generation_notes = "Proxies requests to the detected HTTP API."
+        return tool
+
+    if tool.impl.strategy in {"cli_subcommand", "cli_function"}:
+        tool.generation_status = "proxy"
+        tool.generation_notes = "Proxies requests to the detected CLI entry point."
+        return tool
+
+    if tool.impl.strategy == "protocol_call":
+        if not backend:
+            tool.generation_status = "scaffolded"
+            tool.generation_notes = "Protocol transport was detected, but no backend configuration was generated."
+            tool.manual_steps = [
+                "Configure a concrete protocol backend before using this tool.",
+            ]
+            return tool
+
+        if backend.backend_type == IPCType.SOCKET:
+            tool.generation_status = "proxy"
+            tool.generation_notes = "Proxies requests over the generated socket backend."
+            return tool
+
+        if backend.backend_type == IPCType.FILE:
+            tool.generation_status = "scaffolded"
+            tool.generation_notes = "Uses file handoff files and requires an external worker to consume them."
+            tool.manual_steps = [
+                "Run a companion process that reads .mcp_command.json and writes .mcp_result.json.",
+            ]
+            return tool
+
+        protocol = backend.env_vars.get("PROTOCOL", "")
+        if protocol in {"", "websocket"}:
+            tool.generation_status = "proxy"
+            tool.generation_notes = "Proxies requests over the generated WebSocket JSON-RPC backend."
+            return tool
+
+        if protocol == "mqtt":
+            tool.generation_status = "scaffolded"
+            tool.generation_notes = "MQTT transport was detected, but the generated backend still requires message wiring."
+            tool.manual_steps = [
+                "Override Backend.execute() with MQTT publish/subscribe request handling.",
+            ]
+            return tool
+
+        tool.generation_status = "scaffolded"
+        tool.generation_notes = f"{protocol} transport was detected, but the generated backend is scaffolding only."
+        tool.manual_steps = [
+            f"Implement Backend.execute() for the detected {protocol} protocol.",
+        ]
+        return tool
+
+    tool.generation_status = "proxy"
+    tool.generation_notes = "Uses the generated backend adapter."
+    return tool
+
+
 def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
     """Determine the best implementation strategy for a capability."""
     # HTTP endpoint: capability came from Spring Boot / REST analysis
@@ -605,6 +678,9 @@ class DesignPhase(Phase):
             console.print("    Transport: HTTP (streamable)")
             console.print("    Telemetry: OpenTelemetry enabled")
             console.print("    Docker: Dockerfile will be generated")
+
+        for tool in tools:
+            _assign_generation_status(tool, backend)
 
         design = ServerDesign(
             server_name=analysis.app_name,
