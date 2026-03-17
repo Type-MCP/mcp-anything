@@ -133,15 +133,17 @@ class PackagePhase(Phase):
         design = ctx.manifest.design
         assert design is not None
         server_slug = design.server_name.replace("_", "-")
+        config_path = output_dir / "mcp.json"
+        existing = json.loads(config_path.read_text()) if config_path.exists() else {"mcpServers": {}}
+        server_entry = dict(existing.get("mcpServers", {}).get(server_slug, {}))
+        server_entry["command"] = "mcp-anything"
+        server_entry["args"] = ["serve", str(output_dir)]
+        server_entry.pop("url", None)
         mcp_config = {
             "mcpServers": {
-                server_slug: {
-                    "command": "mcp-anything",
-                    "args": ["serve", str(output_dir)],
-                }
+                server_slug: server_entry,
             }
         }
-        config_path = output_dir / "mcp.json"
         config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
 
     def _emit_mcp_config(self, ctx: PipelineContext, output_dir: Path) -> None:

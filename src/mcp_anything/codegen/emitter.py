@@ -180,10 +180,29 @@ class Emitter:
         if self.design.transport == "http":
             server_entry: dict = {"url": f"http://localhost:{self.design.http_port}/sse"}
         else:
+            env: dict[str, str] = {}
+            env_prefix = self.design.server_name.upper().replace("-", "_")
+            backend = self.design.backend
+            if backend:
+                is_http_proxy = any(t.impl.strategy == "http_call" for t in self.design.tools)
+                if is_http_proxy:
+                    env[f"{env_prefix}_BASE_URL"] = f"http://{backend.host}:{backend.port}"
+
+                auth = backend.auth
+                if auth.auth_type in {"api_key", "bearer"} and auth.env_var_token:
+                    env[auth.env_var_token] = "<set-me>"
+                elif auth.auth_type == "basic":
+                    if auth.env_var_username:
+                        env[auth.env_var_username] = "<username>"
+                    if auth.env_var_password:
+                        env[auth.env_var_password] = "<password>"
+
             server_entry = {
                 "command": f"mcp-{server_slug}",
                 "args": [],
             }
+            if env:
+                server_entry["env"] = env
         mcp_config = {"mcpServers": {server_slug: server_entry}}
         self._write("mcp.json", _json.dumps(mcp_config, indent=2) + "\n")
 

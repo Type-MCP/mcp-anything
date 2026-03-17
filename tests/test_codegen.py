@@ -9,7 +9,7 @@ import pytest
 from mcp_anything.codegen.emitter import Emitter
 from mcp_anything.codegen.renderer import create_jinja_env
 from mcp_anything.models.analysis import IPCType, ParameterSpec
-from mcp_anything.models.design import BackendConfig, ResourceSpec, ServerDesign, ToolSpec
+from mcp_anything.models.design import BackendConfig, ResourceSpec, ServerDesign, ToolImpl, ToolSpec
 
 
 @pytest.fixture
@@ -239,3 +239,72 @@ class TestEmitter:
         assert "mcpServers" in config
         assert "test-app" in config["mcpServers"]
         assert config["mcpServers"]["test-app"]["command"] == "mcp-test-app"
+
+    def test_mcp_config_includes_base_url_for_http_call_tools(self, tmp_path):
+        import json
+
+        design = ServerDesign(
+            server_name="test-app",
+            tools=[
+                ToolSpec(
+                    name="get_users",
+                    description="Fetch users",
+                    module="api",
+                    impl=ToolImpl(strategy="http_call", http_method="GET", http_path="/users"),
+                )
+            ],
+            tool_modules={"api": ["get_users"]},
+            backend=BackendConfig(
+                backend_type=IPCType.SOCKET,
+                host="api.internal",
+                port=9000,
+            ),
+        )
+
+        emitter = Emitter(design, tmp_path)
+        emitter.emit_packaging()
+
+        config = json.loads((tmp_path / "mcp.json").read_text())
+        server_cfg = config["mcpServers"]["test-app"]
+        assert server_cfg["env"]["TEST_APP_BASE_URL"] == "http://api.internal:9000"
+
+    def test_serve_fallback_preserves_env(self, tmp_path):
+        import json
+        from unittest.mock import MagicMock
+
+        from mcp_anything.config import CLIOptions
+        from mcp_anything.models.manifest import GenerationManifest
+        from mcp_anything.pipeline.context import PipelineContext
+        from mcp_anything.pipeline.package import PackagePhase
+
+        design = ServerDesign(server_name="test-app")
+        (tmp_path / "mcp.json").write_text(json.dumps({
+            "mcpServers": {
+                "test-app": {
+                    "command": "mcp-test-app",
+                    "args": [],
+                    "env": {
+                        "TEST_APP_BASE_URL": "http://api.internal:9000",
+                        "TEST_APP_TOKEN": "<set-me>",
+                    },
+                }
+            }
+        }, indent=2) + "\n")
+
+        manifest = GenerationManifest(
+            codebase_path="/tmp/fake",
+            output_dir=str(tmp_path),
+            server_name="test-app",
+            design=design,
+            generated_files=[],
+        )
+        ctx = PipelineContext(CLIOptions(codebase_path=Path("/tmp/fake")), manifest, MagicMock())
+
+        PackagePhase()._rewrite_mcp_json_for_serve(ctx, tmp_path)
+
+        config = json.loads((tmp_path / "mcp.json").read_text())
+        server_cfg = config["mcpServers"]["test-app"]
+        assert server_cfg["command"] == "mcp-anything"
+        assert server_cfg["args"] == ["serve", str(tmp_path)]
+        assert server_cfg["env"]["TEST_APP_BASE_URL"] == "http://api.internal:9000"
+        assert server_cfg["env"]["TEST_APP_TOKEN"] == "<set-me>"

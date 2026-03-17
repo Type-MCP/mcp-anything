@@ -19,6 +19,9 @@ mcp-anything generate /path/to/your/app
 
 # Or from a URL (OpenAPI, GraphQL, gRPC spec)
 mcp-anything generate https://api.example.com/openapi.json
+
+# Or directly from a local spec file
+mcp-anything generate ./openapi.json
 ```
 
 You get a complete, pip-installable MCP server in `./mcp-<name>-server/`. Add it to your agent in seconds:
@@ -38,6 +41,8 @@ mcp-anything generate /path/to/app --transport http --server-auth
 export MCP_SERVER_TOKEN=<your-secret>
 mcp-my-app  # server runs on http://localhost:8000/sse
 ```
+For remote deployments, also set `MCP_SERVER_URL=https://your-server.example.com`.
+
 ```json
 {
   "mcpServers": {

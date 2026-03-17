@@ -622,6 +622,11 @@ class TestStdioTransport:
         assert "command" in server_cfg, (
             f"stdio transport should use 'command' in mcp.json, got: {server_cfg}"
         )
+        assert "env" in server_cfg, "stdio HTTP proxy config should include env placeholders"
+        env = server_cfg["env"]
+        assert any(key.endswith("_BASE_URL") for key in env), (
+            f"Expected *_BASE_URL in env config, got: {env}"
+        )
 
 
 # ---------------------------------------------------------------------------

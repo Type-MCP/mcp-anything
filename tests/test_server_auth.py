@@ -122,6 +122,16 @@ class TestServerAuthGeneration:
         ast.parse(source)
 
     @pytest.mark.asyncio
+    async def test_generated_readme_mentions_auth_setup(self, fake_flask_app, tmp_path):
+        output_dir = tmp_path / "out"
+        await _run_pipeline(fake_flask_app, output_dir, server_auth=True)
+
+        readme = (output_dir / "README.md").read_text()
+        assert "MCP server authentication" in readme
+        assert "MCP_SERVER_TOKEN" in readme
+        assert "MCP_SERVER_URL" in readme
+
+    @pytest.mark.asyncio
     async def test_mcp_json_has_only_url_when_auth_enabled(self, fake_flask_app, tmp_path):
         """mcp.json should only contain the URL — MCP_SERVER_TOKEN is server-side only."""
         output_dir = tmp_path / "out"

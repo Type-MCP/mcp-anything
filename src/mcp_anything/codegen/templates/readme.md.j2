@@ -22,15 +22,14 @@ This server calls into the target application. Install its dependencies:
 
 ## Configuration
 
-{% if design.backend and design.backend.env_vars %}
+{% set env_prefix = design.server_name | upper | replace('-', '_') %}
+{% if design.backend and (design.tools | selectattr("impl.strategy", "equalto", "http_call") | list) %}
 ### Upstream service connection
 
-This server proxies requests to an upstream service. Set these environment variables before starting:
+This server proxies requests to an upstream HTTP service. Set this before starting:
 
 ```bash
-{% for key, val in design.backend.env_vars.items() %}
-export {{ key }}="{{ val }}"   # {{ key }}
-{% endfor %}
+export {{ env_prefix }}_BASE_URL=http://{{ design.backend.host }}:{{ design.backend.port }}
 ```
 
 **The upstream service must already be running** before you start this MCP server.
@@ -128,6 +127,10 @@ mcp-{{ design.server_name | kebab_case }}
   }
 }
 ```
+{% if design.backend and ((design.backend.backend_type.value == "protocol") and (design.backend.env_vars.get("PROTOCOL") == "http" or design.tools | selectattr("impl.strategy", "equalto", "http_call") | list) or (design.backend.auth and design.backend.auth.auth_type)) %}
+
+The generated `mcp.json` also includes the `env` block for the upstream base URL and auth placeholders.
+{% endif %}
 {% endif %}
 
 ## Available Tools
