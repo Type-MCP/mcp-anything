@@ -47,11 +47,21 @@ class PackagePhase(Phase):
         ctx.console.print(f"    Generated {len(generated)} packaging files")
 
         # Auto-install now that pyproject.toml exists
+        install_ok = True
         if not ctx.options.no_install:
             install_errors = self._install_dependencies(ctx, output_dir)
             if install_errors:
+                install_ok = False
                 for err in install_errors:
-                    ctx.console.print(f"    [yellow]Install warning:[/yellow] {err}")
+                    ctx.console.print(f"    [red]Install error:[/red] {err}")
+                ctx.console.print(
+                    f"    [yellow]pip install failed — the generated server is not installed.[/yellow]\n"
+                    f"    [yellow]Use [bold]mcp-anything serve {output_dir}[/bold] to run it without installing,[/yellow]\n"
+                    f"    [yellow]or fix the error above and re-run with --resume.[/yellow]"
+                )
+                # Rewrite stdio mcp.json to use `mcp-anything serve` so the config still works
+                if design.transport != "http":
+                    self._rewrite_mcp_json_for_serve(ctx, output_dir)
 
         # Generate MCP config snippet
         self._emit_mcp_config(ctx, output_dir)
@@ -117,6 +127,22 @@ class PackagePhase(Phase):
             ctx.console.print("    Dependencies installed successfully")
 
         return errors
+
+    def _rewrite_mcp_json_for_serve(self, ctx: PipelineContext, output_dir: Path) -> None:
+        """Overwrite stdio mcp.json to use `mcp-anything serve` when pip install failed."""
+        design = ctx.manifest.design
+        assert design is not None
+        server_slug = design.server_name.replace("_", "-")
+        mcp_config = {
+            "mcpServers": {
+                server_slug: {
+                    "command": "mcp-anything",
+                    "args": ["serve", str(output_dir)],
+                }
+            }
+        }
+        config_path = output_dir / "mcp.json"
+        config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
 
     def _emit_mcp_config(self, ctx: PipelineContext, output_dir: Path) -> None:
         """Print MCP config snippet for Claude Code integration (file already written by emitter)."""

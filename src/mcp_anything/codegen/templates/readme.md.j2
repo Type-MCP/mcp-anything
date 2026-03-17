@@ -20,29 +20,83 @@ This server calls into the target application. Install its dependencies:
 ```
 {% endif %}
 
+## Configuration
+
+{% if design.backend and design.backend.env_vars %}
+### Upstream service connection
+
+This server proxies requests to an upstream service. Set these environment variables before starting:
+
+```bash
+{% for key, val in design.backend.env_vars.items() %}
+export {{ key }}="{{ val }}"   # {{ key }}
+{% endfor %}
+```
+
+**The upstream service must already be running** before you start this MCP server.
+{% endif %}
+{% if design.backend and design.backend.auth and design.backend.auth.auth_type %}
+
+### Upstream authentication
+
+{% if design.backend.auth.auth_type == "api_key" or design.backend.auth.auth_type == "bearer" %}
+```bash
+export {{ design.backend.auth.env_var_token }}=<your-api-key-or-token>
+```
+{% elif design.backend.auth.auth_type == "basic" %}
+```bash
+export {{ design.backend.auth.env_var_username }}=<username>
+export {{ design.backend.auth.env_var_password }}=<password>
+```
+{% endif %}
+{% endif %}
+{% if design.enable_server_auth %}
+
+### MCP server authentication
+
+This server requires clients to authenticate via OAuth2 before connecting.
+
+```bash
+# Set the shared secret — users enter this in the browser login form
+export {{ design.server_auth_env_var }}=<your-secret-token>
+```
+
+For remote deployments, also set the public URL so OAuth redirects work correctly:
+
+```bash
+export MCP_SERVER_URL=https://your-server.example.com
+```
+{% endif %}
+{% if design.enable_telemetry %}
+
+### Telemetry
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+{% endif %}
+
 ## Usage
 
 {% if design.transport == "http" %}
-### As an MCP server (HTTP transport)
+### Start the server
 
 ```bash
 mcp-{{ design.server_name | kebab_case }}
 ```
 
-The server starts on `http://{{ design.http_host }}:{{ design.http_port }}` by default.
-
-Override with environment variables:
+The server starts on `http://{{ design.http_host }}:{{ design.http_port }}` by default. Override:
 
 ```bash
 MCP_HOST=0.0.0.0 MCP_PORT=9000 mcp-{{ design.server_name | kebab_case }}
 ```
 
-### MCP client configuration
+### Add to your MCP client
 
 ```json
 {
   "mcpServers": {
-    "{{ design.server_name }}": {
+    "{{ design.server_name | replace('_', '-') }}": {
       "url": "http://localhost:{{ design.http_port }}/sse"
     }
   }
@@ -56,21 +110,20 @@ docker build -t mcp-{{ design.server_name | kebab_case }} .
 docker run -p {{ design.http_port }}:{{ design.http_port }} mcp-{{ design.server_name | kebab_case }}
 ```
 {% else %}
-### As an MCP server (stdio transport)
+### Start the server
 
 ```bash
 mcp-{{ design.server_name | kebab_case }}
 ```
 
-### Claude Desktop configuration
-
-Add to your `claude_desktop_config.json`:
+### Add to your MCP client
 
 ```json
 {
   "mcpServers": {
-    "{{ design.server_name }}": {
-      "command": "mcp-{{ design.server_name | kebab_case }}"
+    "{{ design.server_name | replace('_', '-') }}": {
+      "command": "mcp-{{ design.server_name | kebab_case }}",
+      "args": []
     }
   }
 }

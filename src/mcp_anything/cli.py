@@ -2,7 +2,10 @@
 
 import argparse
 import asyncio
+import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from rich.console import Console
@@ -115,7 +118,7 @@ def main() -> None:
         run_server(args.output_dir, args.transport, args.host, args.port, console)
         return
 
-    # Handle URL-based generation
+    # Handle URL-based generation and local spec files
     source_url = None
     if hasattr(args, "codebase_path") and isinstance(args.codebase_path, str):
         from mcp_anything.url_fetcher import is_url
@@ -133,7 +136,24 @@ def main() -> None:
             if not getattr(args, "name", None):
                 args.name = derived_name
         else:
-            args.codebase_path = Path(args.codebase_path)
+            spec_path = Path(args.codebase_path)
+            if spec_path.is_file():
+                # Single spec file — wrap in a temp dir so the pipeline sees a directory
+                _spec_exts = {".json", ".yaml", ".yml", ".proto", ".graphql", ".gql"}
+                if spec_path.suffix.lower() not in _spec_exts:
+                    console.print(
+                        f"[red]Error:[/red] {spec_path} is a file but not a recognised spec "
+                        f"({', '.join(sorted(_spec_exts))}). Pass a directory instead."
+                    )
+                    sys.exit(1)
+                temp_dir = Path(tempfile.mkdtemp(prefix="mcp_spec_"))
+                shutil.copy(spec_path, temp_dir / spec_path.name)
+                args.codebase_path = temp_dir
+                if not getattr(args, "name", None):
+                    stem = re.sub(r"[^a-zA-Z0-9]+", "_", spec_path.stem).strip("_").lower()
+                    args.name = stem or "api"
+            else:
+                args.codebase_path = Path(args.codebase_path)
 
     options = parse_options(args)
     if source_url:

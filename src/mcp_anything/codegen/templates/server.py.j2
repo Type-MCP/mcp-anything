@@ -35,6 +35,24 @@ server._custom_starlette_routes.extend(login_routes)
 server = FastMCP("{{ design.server_name }}")
 {% endif %}
 
+{% if design.enable_telemetry %}
+# OpenTelemetry instrumentation — must be set up before tool registration
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+    provider = TracerProvider()
+    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if otlp_endpoint:
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint)))
+    trace.set_tracer_provider(provider)
+    _tracer = trace.get_tracer("{{ design.server_name }}")
+except ImportError:
+    _tracer = None
+{% endif %}
+
 {% if design.backend %}
 from {{ package_name }}.backend import Backend
 
@@ -57,24 +75,6 @@ register_resources(server{% if design.backend %}, _backend{% endif %})
 # Import and register prompts
 from {{ package_name }}.prompts import register_prompts
 register_prompts(server)
-{% endif %}
-
-{% if design.enable_telemetry %}
-# OpenTelemetry instrumentation
-try:
-    from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-
-    provider = TracerProvider()
-    otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
-        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint)))
-    trace.set_tracer_provider(provider)
-    _tracer = trace.get_tracer("{{ design.server_name }}")
-except ImportError:
-    _tracer = None
 {% endif %}
 
 

@@ -88,7 +88,7 @@ The [official GitHub MCP server](https://github.com/github/github-mcp-server) is
 What happens if you point mcp-anything at GitHub's public OpenAPI spec instead?
 
 ```bash
-mcp-anything generate https://api.github.com --name github
+mcp-anything generate https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json --name github --no-llm
 ```
 
 |  | Official (hand-built) | **mcp-anything (auto-generated)** |
