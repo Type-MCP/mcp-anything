@@ -119,4 +119,10 @@ See [ROADMAP.md](ROADMAP.md) for the full roadmap. See [CONTRIBUTING.md](CONTRIB
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mcp-anything/mcp-anything&type=Date)](https://www.star-history.com/#mcp-anything/mcp-use&Date)
+
+---
+
 Stop writing MCP servers by hand.
