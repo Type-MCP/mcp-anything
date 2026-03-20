@@ -38,7 +38,6 @@ class Emitter:
     def emit_all(self) -> list[str]:
         """Generate all files for the MCP server package."""
         self._emit_package_init()
-        self._emit_auth_provider()
         self._emit_server()
         self._emit_models()
         self._emit_state()
@@ -77,12 +76,6 @@ class Emitter:
     def _emit_package_init(self) -> None:
         src_dir = f"src/{self.package_name}"
         self._write(f"{src_dir}/__init__.py", f'"""MCP server for {self.design.server_name}."""\n')
-
-    def _emit_auth_provider(self) -> None:
-        if not self.design.enable_server_auth:
-            return
-        content = self._render("auth_provider.py.j2")
-        self._write(f"src/{self.package_name}/_auth_provider.py", content)
 
     def _emit_server(self) -> None:
         content = self._render("server.py.j2")

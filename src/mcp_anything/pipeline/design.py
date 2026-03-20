@@ -658,7 +658,6 @@ class DesignPhase(Phase):
         transport = ctx.options.transport
         is_http = transport == "http"
         enable_telemetry = is_http  # Enable telemetry for HTTP servers
-        enable_server_auth = is_http and getattr(ctx.options, "server_auth", False)
 
         # Add backend-specific dependencies
         dependencies = ["mcp>=1.0"]
@@ -679,9 +678,6 @@ class DesignPhase(Phase):
             console.print("    Transport: HTTP (streamable)")
             console.print("    Telemetry: OpenTelemetry enabled")
             console.print("    Docker: Dockerfile will be generated")
-        if enable_server_auth:
-            console.print("    Auth: Bearer token protection enabled (MCP_SERVER_TOKEN)")
-
         for tool in tools:
             _assign_generation_status(tool, backend)
 
@@ -698,7 +694,6 @@ class DesignPhase(Phase):
             transport=transport,
             enable_telemetry=enable_telemetry,
             generate_docker=is_http,
-            enable_server_auth=enable_server_auth,
         )
 
         ctx.manifest.design = design

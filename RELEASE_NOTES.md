@@ -1,14 +1,14 @@
 # v0.1.2 — Founder trial hardening
 
-This release tightens the path from `mcp-anything generate ...` to a working MCP server for real production codebases, with a specific focus on HTTP/OAuth onboarding and frameworks the upcoming founder trial depends on.
+This release tightens the path from `mcp-anything generate ...` to a working MCP server for real production codebases, with a specific focus on HTTP onboarding and frameworks the upcoming founder trial depends on.
 
 ## Highlights
 
 - **Direct OpenAPI file input** — `mcp-anything generate ./openapi.json` now works without wrapping the spec in a directory first
-- **HTTP/OAuth onboarding fixes** — generated docs now explain `MCP_SERVER_TOKEN`, `MCP_SERVER_URL`, upstream `*_BASE_URL`, and upstream auth environment variables
+- **HTTP onboarding fixes** — generated docs now explain upstream `*_BASE_URL` and upstream auth environment variables
 - **Safer `mcp.json` generation** — stdio configs now include required env placeholders for HTTP proxy tools, and the `mcp-anything serve` fallback preserves them if editable install fails
 - **Better Express coverage** — added support for `routing-controllers` decorator-based apps and fixed HTTP body handling in generated tools
-- **Stronger validation** — added regression coverage for codegen, server auth, integration, CLI, and new framework detection paths
+- **Stronger validation** — added regression coverage for codegen, integration, CLI, and new framework detection paths
 
 ## Real-repo validation
 
@@ -57,5 +57,4 @@ See the [README](https://github.com/gabrielekarra/mcp-anything#readme) for full 
 ## What's next
 
 - Desktop software showcase (Blender, GIMP, Audacity)
-- OAuth/token auth on the MCP server itself
 - Plugin system for custom detectors

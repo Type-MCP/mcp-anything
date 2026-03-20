@@ -37,11 +37,9 @@ You get a complete, pip-installable MCP server in `./mcp-<name>-server/`. Add it
 
 **HTTP (remote/shared, recommended):** start the server and point your agent at it:
 ```bash
-mcp-anything generate /path/to/app --transport http --server-auth
-export MCP_SERVER_TOKEN=<your-secret>
+mcp-anything generate /path/to/app --transport http
 mcp-my-app  # server runs on http://localhost:8000/sse
 ```
-For remote deployments, also set `MCP_SERVER_URL=https://your-server.example.com`.
 
 ```json
 {
@@ -114,7 +112,6 @@ stdio MCP runs the server as a local subprocess — one process per agent sessio
 HTTP transport (`--transport http`) lets you:
 - Deploy once, connect from anywhere (CI, cloud agents, teammates)
 - Share a single server instance across multiple agent sessions
-- Protect access with OAuth2 (`--server-auth` generates a full authorization code + PKCE flow)
 - Run in Docker or any container platform
 
 For anything beyond local prototyping, HTTP is the right default.

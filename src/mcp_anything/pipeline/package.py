@@ -157,13 +157,6 @@ class PackagePhase(Phase):
         mcp_config = json.loads((output_dir / "mcp.json").read_text())
 
         ctx.console.print("    Generated mcp.json config")
-        if design.enable_server_auth:
-            ctx.console.print(
-                f"    [yellow]Before starting: export {design.server_auth_env_var}=<secret-token>[/yellow]"
-            )
-            ctx.console.print(
-                "    [yellow]Users enter this token in the browser login form when connecting via Claude.[/yellow]"
-            )
         ctx.console.print()
         if design.transport == "http":
             ctx.console.print("    [bold]Use with remote MCP clients:[/bold]")

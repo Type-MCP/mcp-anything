@@ -49,23 +49,6 @@ export {{ design.backend.auth.env_var_password }}=<password>
 ```
 {% endif %}
 {% endif %}
-{% if design.enable_server_auth %}
-
-### MCP server authentication
-
-This server requires clients to authenticate via OAuth2 before connecting.
-
-```bash
-# Set the shared secret — users enter this in the browser login form
-export {{ design.server_auth_env_var }}=<your-secret-token>
-```
-
-For remote deployments, also set the public URL so OAuth redirects work correctly:
-
-```bash
-export MCP_SERVER_URL=https://your-server.example.com
-```
-{% endif %}
 {% if design.enable_telemetry %}
 
 ### Telemetry

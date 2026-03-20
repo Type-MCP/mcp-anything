@@ -44,12 +44,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="MCP transport mode (default: stdio, use http for remote/enterprise)",
     )
     gen.add_argument(
-        "--server-auth",
-        action="store_true",
-        default=False,
-        help="Protect the HTTP server with bearer token auth (reads MCP_SERVER_TOKEN env var)",
-    )
-    gen.add_argument(
         "--include",
         action="append",
         default=None,
@@ -117,7 +111,6 @@ def parse_options(args: argparse.Namespace) -> CLIOptions:
         no_install=getattr(args, "no_install", False),
         verbose=getattr(args, "verbose", False),
         transport=getattr(args, "transport", "stdio") or "stdio",
-        server_auth=getattr(args, "server_auth", False),
         include=getattr(args, "include", None),
         exclude=getattr(args, "exclude", None),
         scope_file=getattr(args, "scope_file", None),

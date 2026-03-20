@@ -19,7 +19,6 @@ class CLIOptions(BaseModel):
     no_install: bool = False
     verbose: bool = False
     transport: str = "stdio"  # "stdio" or "http"
-    server_auth: bool = False  # protect HTTP transport with bearer token
     source_url: Optional[str] = None  # URL if fetched from remote
     include: Optional[list[str]] = None  # glob patterns to include capabilities
     exclude: Optional[list[str]] = None  # glob patterns to exclude capabilities

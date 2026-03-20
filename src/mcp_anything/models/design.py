@@ -113,5 +113,3 @@ class ServerDesign(BaseModel):
     enable_telemetry: bool = False
     generate_docker: bool = False
     generate_agents_md: bool = True
-    enable_server_auth: bool = False  # protect HTTP server with bearer token
-    server_auth_env_var: str = "MCP_SERVER_TOKEN"  # env var holding the expected token

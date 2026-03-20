@@ -115,11 +115,9 @@ Current version: **0.1.2**
 
 ### v0.6.0 — Quality & Ecosystem
 
-- [ ] **OAuth/token auth on MCP server** — protect the MCP server itself with OAuth2 or token-based auth (not just backend API auth)
 - [ ] **Generated test improvements** — integration tests with mocked backends, snapshot testing
 - [ ] **Plugin system** — custom detectors and analyzers as pip-installable plugins
 - [ ] **Multi-service composition** — generate a single MCP server that proxies to multiple backend services
-- [ ] **Hot reload** — watch source changes and regenerate automatically
 - [ ] **Config file support** — `.mcp-anything.yaml` for project-specific settings
 
 ### Future
