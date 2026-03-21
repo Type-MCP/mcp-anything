@@ -68,17 +68,17 @@ def endpoints_to_capabilities(
             continue
         seen.add(tool_name)
 
-        desc = f"{ep['http_method']} {ep['path']} - {ep.get('description', '')}"
-
         capabilities.append(Capability(
             name=tool_name,
-            description=desc,
+            description=ep.get("description", ""),
             category="api",
             parameters=ep.get("parameters", []),
             return_type="object",
             source_file=source_file,
             source_function=ep.get("function_name", ""),
             ipc_type=IPCType.PROTOCOL,
+            http_method=ep["http_method"],
+            http_path=ep["path"],
         ))
 
     return capabilities

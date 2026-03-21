@@ -297,17 +297,17 @@ def django_results_to_capabilities(
                 continue
             seen.add(tool_name)
 
-            desc = f"{ep.http_method} {ep.path} - {ep.description}"
-
             capabilities.append(Capability(
                 name=tool_name,
-                description=desc,
+                description=ep.description,
                 category="api",
                 parameters=ep.parameters,
                 return_type="object",
                 source_file=file_path,
                 source_function=ep.function_name,
                 ipc_type=IPCType.PROTOCOL,
+                http_method=ep.http_method,
+                http_path=ep.path,
             ))
 
     return capabilities

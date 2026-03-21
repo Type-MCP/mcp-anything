@@ -92,7 +92,6 @@ mcp-<name>-server/
 │   ├── tools/           # Tool modules, one file per capability group
 │   ├── prompts.py       # Server-delivered MCP prompts
 │   └── resources.py     # Dynamic MCP resources
-├── tests/               # Auto-generated pytest suite
 ├── AGENTS.md            # Tool index for coding agents
 ├── Dockerfile           # Container deployment (HTTP mode)
 ├── mcp.json             # Ready-to-paste MCP client config
@@ -134,7 +133,6 @@ mcp-anything generate https://raw.githubusercontent.com/github/rest-api-descript
 | **Backend** | Native Go SDK + GraphQL | `httpx` HTTP proxy from OpenAPI spec |
 | **Auth** | PAT / OAuth | PAT via `GITHUB_API_KEY` env var |
 | **Transport** | stdio, HTTP | stdio (default), HTTP (`--transport http`) |
-| **Tests** | Hand-written | Auto-generated pytest suite |
 | **Docs** | Hand-written README | Auto-generated AGENTS.md + MCP resources |
 
 The generated server covers **every** GitHub REST API endpoint — repos, issues, PRs, actions, packages, security advisories, code search, gists, orgs, teams, notifications, and more. Each endpoint becomes an MCP tool with typed parameters extracted from the OpenAPI spec.

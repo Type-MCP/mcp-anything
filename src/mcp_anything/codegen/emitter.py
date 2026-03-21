@@ -47,16 +47,6 @@ class Emitter:
         self._emit_prompt_modules()
         return self.generated_files
 
-    def emit_tests(self) -> list[str]:
-        """Generate test files."""
-        start = len(self.generated_files)
-        self._emit_test_conftest()
-        self._emit_test_tools()
-        self._emit_test_protocol()
-        self._emit_test_backend()
-        self._emit_test_runtime()
-        return self.generated_files[start:]
-
     def emit_docs(self) -> list[str]:
         """Generate documentation."""
         start = len(self.generated_files)
@@ -134,28 +124,6 @@ class Emitter:
             return
         content = self._render("prompts_module.py.j2")
         self._write(f"src/{self.package_name}/prompts.py", content)
-
-    def _emit_test_conftest(self) -> None:
-        content = self._render("conftest.py.j2")
-        self._write("tests/conftest.py", content)
-
-    def _emit_test_tools(self) -> None:
-        content = self._render("test_tools.py.j2")
-        self._write("tests/test_tools.py", content)
-
-    def _emit_test_protocol(self) -> None:
-        content = self._render("test_protocol.py.j2")
-        self._write("tests/test_protocol.py", content)
-
-    def _emit_test_backend(self) -> None:
-        if not self.design.backend:
-            return
-        content = self._render("test_backend.py.j2")
-        self._write("tests/test_backend.py", content)
-
-    def _emit_test_runtime(self) -> None:
-        content = self._render("test_runtime.py.j2")
-        self._write("tests/test_runtime.py", content)
 
     def _emit_readme(self) -> None:
         content = self._render("readme.md.j2")

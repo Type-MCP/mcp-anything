@@ -112,10 +112,10 @@ def _build_tool_impl(cap: Capability, ipc_type: Optional[IPCType]) -> ToolImpl:
     """Determine the best implementation strategy for a capability."""
     # HTTP endpoint: capability came from Spring Boot / REST analysis
     if cap.category == "api" and cap.ipc_type == IPCType.PROTOCOL:
-        # Parse HTTP method and path from description: "GET /api/users - ..."
-        http_method = "GET"
-        http_path = "/"
-        if cap.description and " " in cap.description:
+        http_method = cap.http_method or "GET"
+        http_path = cap.http_path or "/"
+        # Fallback: parse from description for non-OpenAPI analyzers
+        if not cap.http_method and cap.description and " " in cap.description:
             parts = cap.description.split(" ", 2)
             if parts[0] in ("GET", "POST", "PUT", "DELETE", "PATCH"):
                 http_method = parts[0]

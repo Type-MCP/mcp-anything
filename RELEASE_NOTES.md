@@ -34,7 +34,7 @@ MCP-Anything auto-generates fully functional MCP server packages from any codeba
 ## Key capabilities
 
 - **15 static detectors** — CLI (argparse, Click, Typer), HTTP frameworks (FastAPI, Flask, Spring Boot, Express, Django, Rails, Gin, Actix, Axum), OpenAPI/Swagger, GraphQL, gRPC/Protobuf, WebSockets
-- **6-phase pipeline** — Analyze, Design, Implement, Test, Document, Package — with JSON manifest for resume support
+- **5-phase pipeline** — Analyze, Design, Implement, Test, Document, Package — with JSON manifest for resume support
 - **Multiple backend strategies** — CLI subprocess, HTTP proxy, Python call, stub — auto-selected based on what the codebase exposes
 - **Full MCP protocol** — Tools, Resources, Prompts, AGENTS.md generation for agent discoverability
 - **HTTP transport** — `--transport http` for remote deployment with OpenTelemetry tracing and Docker packaging

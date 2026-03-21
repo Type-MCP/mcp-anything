@@ -198,12 +198,15 @@ class TestCapabilityConversion:
         assert "post_users" in names
         assert "delete_users_by_user_id" in names
 
-    def test_description_includes_http_method(self, fake_fastapi_app):
+    def test_http_method_and_path_fields(self, fake_fastapi_app):
         fi = FileInfo(path="main.py", language=Language.PYTHON, size_bytes=0, line_count=0)
         result = analyze_flask_fastapi_file(fake_fastapi_app, fi)
         caps = flask_fastapi_results_to_capabilities({"main.py": result})
         get_users = next(c for c in caps if c.name == "get_users")
-        assert get_users.description.startswith("GET /users")
+        assert get_users.http_method == "GET"
+        assert get_users.http_path == "/users"
+        # Description should be clean, not prefixed with HTTP method/path
+        assert not get_users.description.startswith("GET ")
 
     def test_skips_depends_params(self, tmp_path):
         (tmp_path / "app.py").write_text(

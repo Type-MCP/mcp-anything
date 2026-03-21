@@ -76,6 +76,8 @@ class Capability(BaseModel):
     source_class: str = ""
     init_params: list[ParameterSpec] = Field(default_factory=list)
     ipc_type: Optional[IPCType] = None
+    http_method: Optional[str] = None  # e.g. "GET", "POST"
+    http_path: Optional[str] = None  # e.g. "/api/users/{id}"
 
 
 class AnalysisResult(BaseModel):

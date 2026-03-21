@@ -12,11 +12,11 @@ from mcp_anything.pipeline.phase import Phase
 
 class TestPipelineEngine:
     def test_all_phases_defined(self):
-        assert ALL_PHASES == ["analyze", "design", "implement", "test", "document", "package"]
+        assert ALL_PHASES == ["analyze", "design", "implement", "document", "package"]
 
     def test_load_all_phases(self):
         phases = _load_phases(ALL_PHASES)
-        assert len(phases) == 6
+        assert len(phases) == 5
         assert all(isinstance(p, Phase) for p in phases)
         assert [p.name for p in phases] == ALL_PHASES
 

@@ -31,10 +31,10 @@ All tests should pass before submitting a PR. The test suite runs in under 1 sec
 
 ## Project Architecture
 
-MCP-Anything follows a 6-phase pipeline architecture:
+MCP-Anything follows a 5-phase pipeline architecture:
 
 ```
-ANALYZE → DESIGN → IMPLEMENT → TEST → DOCUMENT → PACKAGE
+ANALYZE → DESIGN → IMPLEMENT → DOCUMENT → PACKAGE
 ```
 
 ### Directory Structure

@@ -459,7 +459,7 @@ class TestGitHubScopeComparison:
 
         manifest = GenerationManifest.load(output_dir / "mcp-anything-manifest.json")
         assert manifest.completed_phases == [
-            "analyze", "design", "implement", "test", "document", "package"
+            "analyze", "design", "implement", "document", "package"
         ]
         assert manifest.errors == []
 

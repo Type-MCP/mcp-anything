@@ -169,11 +169,13 @@ class TestOpenAPI3Capabilities:
         assert age.type == "integer"
         assert age.required is False
 
-    def test_description_includes_http_method(self, petstore_spec):
+    def test_http_method_and_path_fields(self, petstore_spec):
         caps = openapi_to_capabilities(petstore_spec, "openapi.json")
         list_pets = next(c for c in caps if c.name == "list_pets")
-        assert "GET" in list_pets.description
-        assert "/pets" in list_pets.description
+        assert list_pets.http_method == "GET"
+        assert list_pets.http_path == "/pets"
+        # Description should be clean summary, not prefixed with method/path
+        assert list_pets.description == "List all pets"
 
     def test_all_capabilities_are_api_protocol(self, petstore_spec):
         caps = openapi_to_capabilities(petstore_spec, "openapi.json")
@@ -210,7 +212,7 @@ class TestSwagger2Capabilities:
     def test_swagger_base_path(self, swagger_spec):
         caps = openapi_to_capabilities(swagger_spec, "swagger.yaml")
         list_cap = next(c for c in caps if c.name == "listanimals")
-        assert "/api/animals" in list_cap.description
+        assert list_cap.http_path == "/api/animals"
 
     def test_swagger_body_params(self, swagger_spec):
         caps = openapi_to_capabilities(swagger_spec, "swagger.yaml")

@@ -11,7 +11,7 @@ from mcp_anything.pipeline.phase import Phase
 from mcp_anything.pipeline.scope import apply_scope, write_scope_file
 
 
-ALL_PHASES = ["analyze", "design", "implement", "test", "document", "package"]
+ALL_PHASES = ["analyze", "design", "implement", "document", "package"]
 
 
 def _load_phases(names: list[str]) -> list[Phase]:
@@ -30,10 +30,6 @@ def _load_phases(names: list[str]) -> list[Phase]:
             from mcp_anything.pipeline.implement import ImplementPhase
 
             phases.append(ImplementPhase())
-        elif name == "test":
-            from mcp_anything.pipeline.test_phase import TestPhase
-
-            phases.append(TestPhase())
         elif name == "document":
             from mcp_anything.pipeline.document import DocumentPhase
 

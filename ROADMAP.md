@@ -5,7 +5,7 @@ Current version: **0.1.2**
 ## Completed
 
 ### Core Pipeline
-- [x] 6-phase pipeline: ANALYZE → DESIGN → IMPLEMENT → TEST → DOCUMENT → PACKAGE
+- [x] 5-phase pipeline: ANALYZE → DESIGN → IMPLEMENT → DOCUMENT → PACKAGE
 - [x] JSON manifest for pipeline state and resume support
 - [x] Post-generation AST validation of all generated Python
 - [x] Auto-install target project and generated server dependencies
@@ -96,7 +96,6 @@ Current version: **0.1.2**
 - [x] **`mcp-anything serve`** — run generated servers directly without installing, with transport override support
 
 ### Bug Fixes & Quality (v0.1.1)
-- [x] **Test phase ordering** — generated tests now pass during generation (PYTHONPATH injection)
 - [x] **Package structure verification** — `_verify_structure` uses correct `mcp_` prefix
 - [x] **Express Router mount prefix** — cross-file prefix resolution for router-mounted routes
 - [x] **OpenTelemetry instrumentation** — `_tracer` now wraps tool handlers with spans (was dead code)
@@ -115,7 +114,6 @@ Current version: **0.1.2**
 
 ### v0.6.0 — Quality & Ecosystem
 
-- [ ] **Generated test improvements** — integration tests with mocked backends, snapshot testing
 - [ ] **Plugin system** — custom detectors and analyzers as pip-installable plugins
 - [ ] **Multi-service composition** — generate a single MCP server that proxies to multiple backend services
 - [ ] **Config file support** — `.mcp-anything.yaml` for project-specific settings

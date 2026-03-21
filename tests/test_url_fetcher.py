@@ -217,7 +217,7 @@ class TestFetchUrlPipeline:
 
             manifest = GenerationManifest.load(tmp_output / "mcp-anything-manifest.json")
             assert manifest.completed_phases == [
-                "analyze", "design", "implement", "test", "document", "package"
+                "analyze", "design", "implement", "document", "package"
             ]
             assert manifest.errors == []
 

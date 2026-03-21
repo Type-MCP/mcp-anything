@@ -220,6 +220,54 @@ def _extract_parameters(
     return params
 
 
+_METHOD_VERBS = {
+    "GET": "Get",
+    "POST": "Create",
+    "PUT": "Update",
+    "PATCH": "Update",
+    "DELETE": "Delete",
+}
+
+
+def _path_to_description(method: str, path: str) -> str:
+    """Generate a human-readable description from HTTP method + path.
+
+    Examples:
+        GET /users/{id}     → "Get a user by ID"
+        POST /repos         → "Create a repo"
+        DELETE /pets/{petId} → "Delete a pet by pet ID"
+    """
+    verb = _METHOD_VERBS.get(method.upper(), method.capitalize())
+    parts = path.strip("/").split("/")
+    # Remove common prefixes
+    parts = [p for p in parts if p not in ("api", "v1", "v2", "v3", "v4")]
+
+    # Find the resource name (last non-parameter segment)
+    resource = "resource"
+    for part in reversed(parts):
+        if not part.startswith("{"):
+            # plurals → singular: "users" → "user", "repos" → "repo"
+            resource = part.rstrip("s") if part.endswith("s") and len(part) > 2 else part
+            resource = resource.replace("-", " ").replace("_", " ")
+            break
+
+    # Check for path parameters
+    param_parts = [p[1:-1] for p in parts if p.startswith("{") and p.endswith("}")]
+    if param_parts:
+        # "userId" → "user ID", "petId" → "pet ID"
+        param_desc = re.sub(r"([a-z])([A-Z])", r"\1 \2", param_parts[-1])
+        param_desc = param_desc.replace("_", " ")
+        return f"{verb} a {resource} by {param_desc}"
+
+    if method.upper() == "GET":
+        # GET without params is usually a list
+        resource_plural = parts[-1] if parts else "resources"
+        resource_plural = resource_plural.replace("-", " ").replace("_", " ")
+        return f"List {resource_plural}"
+
+    return f"{verb} a {resource}"
+
+
 def _operation_to_tool_name(method: str, path: str) -> str:
     """Generate a snake_case tool name from HTTP method + path."""
     path_parts = path.strip("/").split("/")
@@ -363,12 +411,10 @@ def openapi_to_capabilities(
                 continue
             seen.add(tool_name)
 
-            # Description
+            # Description — use summary or description, generate from path if missing
             description = operation.get("summary", "") or operation.get("description", "")
             if not description:
-                description = f"{method.upper()} {full_path}"
-            # Prepend HTTP info for design phase
-            desc_with_method = f"{method.upper()} {full_path} - {description}"
+                description = _path_to_description(method, full_path)
 
             # Extract parameters
             path_params = _extract_path_params(full_path)
@@ -396,13 +442,15 @@ def openapi_to_capabilities(
 
             capabilities.append(Capability(
                 name=tool_name,
-                description=desc_with_method,
+                description=description,
                 category="api",
                 parameters=params,
                 return_type="object",
                 source_file=spec_path,
                 source_function=operation_id or f"{method}_{full_path}",
                 ipc_type=IPCType.PROTOCOL,
+                http_method=method.upper(),
+                http_path=full_path,
             ))
 
     return capabilities

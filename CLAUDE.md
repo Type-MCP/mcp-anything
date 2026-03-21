@@ -10,7 +10,7 @@ One command: `mcp-anything generate <path>` → pip-installable MCP server packa
 - Run CLI: `mcp-anything --help`
 
 ## Architecture
-- 6-phase pipeline: ANALYZE → DESIGN → IMPLEMENT → TEST → DOCUMENT → PACKAGE
+- 5-phase pipeline: ANALYZE → DESIGN → IMPLEMENT → DOCUMENT → PACKAGE
 - Static detectors + optional LLM analysis (Claude API)
 - Jinja2 templates for code generation (`src/mcp_anything/codegen/templates/`)
 - Generated servers use `mcp` SDK's FastMCP
@@ -24,9 +24,8 @@ One command: `mcp-anything generate <path>` → pip-installable MCP server packa
 - `src/mcp_anything/pipeline/analyze.py` — phase 1: detection + AST analysis
 - `src/mcp_anything/pipeline/design.py` — phase 2: capability → tool mapping
 - `src/mcp_anything/pipeline/implement.py` — phase 3: code generation
-- `src/mcp_anything/pipeline/test_phase.py` — phase 4: test generation + execution
-- `src/mcp_anything/pipeline/document.py` — phase 5: docs generation
-- `src/mcp_anything/pipeline/package.py` — phase 6: pyproject.toml + install
+- `src/mcp_anything/pipeline/document.py` — phase 4: docs generation
+- `src/mcp_anything/pipeline/package.py` — phase 5: pyproject.toml + install
 - `src/mcp_anything/codegen/emitter.py` — Jinja2 template rendering
 - `src/mcp_anything/models/` — Pydantic models (analysis, design, manifest)
 - `src/mcp_anything/url_fetcher.py` — URL spec fetching and type detection
@@ -48,7 +47,7 @@ Located in `src/mcp_anything/analyzers/`:
 
 ### What's WORKING (tested end-to-end with real generation)
 
-All of these produce valid Python, install correctly, and pass generated tests:
+All of these produce valid Python and install correctly:
 
 | Source Type | Detection | Tools | Status |
 |---|---|---|---|
@@ -67,7 +66,7 @@ All of these produce valid Python, install correctly, and pass generated tests:
 | WebSocket (raw) | 0.85 | Functions → protocol_call | Working |
 
 Working features:
-- All 6 pipeline phases execute
+- All 5 pipeline phases execute
 - 6 backend strategies: cli_subcommand, cli_function, python_call, http_call, protocol_call, stub
 - HTTP transport mode (`--transport http`)
 - `mcp-anything serve` command
@@ -83,9 +82,9 @@ Working features:
 
 ### What's BROKEN (bugs to fix)
 
-**Bug 1: TEST phase runs before package is installed — FIXED 2026-03-16**
-- Fixed by injecting `PYTHONPATH=<output_dir>/src` into the test subprocess env
-  in `test_phase.py`, so tests can import the generated package before pip install.
+**Bug 1: TEST phase — REMOVED 2026-03-21**
+- Test generation phase removed entirely. Generated tests were fake (didn't mock
+  backends) and created false confidence or visible failures.
 
 **Bug 2: Package `_verify_structure` uses wrong path — FIXED 2026-03-16**
 - Fixed by prepending `mcp_` to the package name in `package.py` to match
@@ -194,7 +193,7 @@ Router tool naming) have been fixed. 314 unit tests pass.
 20 integration tests in `tests/test_integration.py` covering all 12 source types,
 transport modes, resume, manifest integrity, and AGENTS.md generation. Each test
 runs the full 6-phase pipeline and verifies: file structure, Python syntax validity,
-server importability, correct tool names/strategies, and generated test passing.
+server importability, and correct tool names/strategies.
 
 ### Phase 3: Wire Up OpenTelemetry Properly — DONE (2026-03-16)
 
@@ -226,17 +225,15 @@ for per-capability curation. 28 tests in `tests/test_scope.py`. See scope.py doc
 
 In priority order:
 1. **CLI UX** — validate `--phases` input, better error messages
-2. **Generated test improvements** — mock backends so tests verify tool logic
-   without needing the real service running
-3. **Multi-service composition** — one MCP server proxying multiple backends
-4. **Config file** — `.mcp-anything.yaml` for persistent project settings
-5. **Plugin system** — custom detectors for niche frameworks
+2. **Multi-service composition** — one MCP server proxying multiple backends
+3. **Config file** — `.mcp-anything.yaml` for persistent project settings
+4. **Plugin system** — custom detectors for niche frameworks
 
 ### What "Done" Looks Like
 
 The product is "done" when:
 1. `mcp-anything generate <any-codebase>` produces a working MCP server
-2. The generated tests pass during generation (not just after manual install)
+2. Tool descriptions are clean and useful for LLMs
 3. `mcp-anything serve <output>` starts the server and it responds to MCP calls
 4. Users see zero warnings or errors during normal generation
 5. Integration tests cover all 12+ source types automatically

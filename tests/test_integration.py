@@ -1,18 +1,15 @@
 """End-to-end integration tests for the mcp-anything pipeline.
 
-Each test runs the full 6-phase pipeline on a fixture app and verifies:
+Each test runs the full 5-phase pipeline on a fixture app and verifies:
   1. All phases complete without errors
   2. Expected output files exist with correct structure
   3. Generated Python files are syntactically valid (AST-parseable)
   4. The generated server module can be imported and has the expected tools
   5. The design phase produces correct tool names and strategies
-  6. Generated tests pass when run with PYTHONPATH set
 """
 
 import ast
 import asyncio
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -76,7 +73,6 @@ def _assert_standard_structure(output_dir: Path, pkg_name: str) -> None:
     assert (src / "__init__.py").exists(), "__init__.py missing"
     assert (src / "server.py").exists(), "server.py missing"
     assert (output_dir / "pyproject.toml").exists(), "pyproject.toml missing"
-    assert (output_dir / "tests").is_dir(), "tests/ directory missing"
     assert (output_dir / "mcp.json").exists(), "mcp.json missing"
     assert (output_dir / "README.md").exists(), "README.md missing"
 
@@ -104,17 +100,6 @@ def _get_tool_names(manifest: GenerationManifest) -> set[str]:
     return {t.name for t in manifest.design.tools}
 
 
-def _run_generated_tests(output_dir: Path) -> subprocess.CompletedProcess:
-    """Run pytest on the generated test suite with PYTHONPATH set."""
-    env = {**os.environ, "PYTHONPATH": str(output_dir / "src")}
-    return subprocess.run(
-        [sys.executable, "-m", "pytest", str(output_dir / "tests"), "-v", "--tb=short"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        cwd=str(output_dir),
-        env=env,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +115,9 @@ def _full_assertions(
     min_tools: int = 1,
 ) -> None:
     """Run all standard assertions on a completed pipeline."""
-    # All 6 phases completed
+    # All 5 phases completed
     assert manifest.completed_phases == [
-        "analyze", "design", "implement", "test", "document", "package"
+        "analyze", "design", "implement", "document", "package"
     ], f"Phases: {manifest.completed_phases}"
     assert manifest.errors == [], f"Pipeline errors: {manifest.errors}"
 
@@ -167,14 +152,6 @@ def _full_assertions(
     # Server module can be imported
     server_mod = _import_server(output_dir, pkg_name)
     assert hasattr(server_mod, "server"), "server object not found in server module"
-
-    # Generated tests pass
-    result = _run_generated_tests(output_dir)
-    assert result.returncode == 0, (
-        f"Generated tests failed (rc={result.returncode}):\n"
-        f"STDOUT:\n{result.stdout[-2000:]}\n"
-        f"STDERR:\n{result.stderr[-1000:]}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +369,6 @@ class TestGoGin:
         server_mod = _import_server(tmp_output, pkg_name)
         assert hasattr(server_mod, "server")
 
-        result = _run_generated_tests(tmp_output)
-        assert result.returncode == 0, (
-            f"Generated tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-1000:]}"
-        )
-
 
 # ---------------------------------------------------------------------------
 # Tests — Ruby backends
@@ -562,7 +534,7 @@ class TestWebSocketProtocol:
             f"Expected websockets dependency, got: {design.dependencies}"
         )
 
-        # Structure, syntax, imports, and generated tests
+        # Structure, syntax, imports
         pkg_name = _package_name(design.server_name)
         _assert_standard_structure(tmp_output, pkg_name)
         syntax_errors = _validate_python_syntax(tmp_output)
@@ -570,11 +542,6 @@ class TestWebSocketProtocol:
 
         server_mod = _import_server(tmp_output, pkg_name)
         assert hasattr(server_mod, "server"), "server object not found"
-
-        result = _run_generated_tests(tmp_output)
-        assert result.returncode == 0, (
-            f"Generated tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-1000:]}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +633,7 @@ class TestResume:
 
         manifest2 = GenerationManifest.load(tmp_output / "mcp-anything-manifest.json")
         assert manifest2.completed_phases == [
-            "analyze", "design", "implement", "test", "document", "package"
+            "analyze", "design", "implement", "document", "package"
         ]
         # Design data should be preserved from the first run
         assert manifest2.design is not None
@@ -880,7 +847,7 @@ class TestScopeFiltering:
 
         manifest2 = GenerationManifest.load(tmp_output / "mcp-anything-manifest.json")
         assert manifest2.completed_phases == [
-            "analyze", "design", "implement", "test", "document", "package"
+            "analyze", "design", "implement", "document", "package"
         ]
 
         tool_names = _get_tool_names(manifest2)
@@ -889,10 +856,6 @@ class TestScopeFiltering:
         assert "create_pet" not in tool_names
         assert "delete_pet" not in tool_names
 
-        # Generated code is valid and tests pass
+        # Generated code is valid
         syntax_errors = _validate_python_syntax(tmp_output)
         assert syntax_errors == [], f"Syntax errors: {syntax_errors}"
-        result = _run_generated_tests(tmp_output)
-        assert result.returncode == 0, (
-            f"Generated tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-1000:]}"
-        )

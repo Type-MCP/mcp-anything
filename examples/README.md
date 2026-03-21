@@ -25,7 +25,6 @@ The [official GitHub MCP server](https://github.com/github/github-mcp-server) is
 | **Backend** | Native Go SDK + GraphQL | `httpx` HTTP proxy |
 | **Auth** | PAT / OAuth | PAT via `GITHUB_BASE_URL` + `GITHUB_API_KEY` env vars |
 | **Transport** | stdio, HTTP | stdio (default), HTTP (`--transport http`) |
-| **Tests** | Hand-written | 1,095 auto-generated (all passing) |
 | **Docs** | Hand-written | Auto-generated AGENTS.md + MCP resources |
 
 ### Sample generated tools
@@ -81,7 +80,6 @@ github-server/
 │   ├── tools/api.py     # 1,093 tool handlers
 │   ├── prompts.py       # Server-delivered MCP prompts
 │   └── resources.py     # Dynamic MCP resources
-├── tests/               # 1,095 auto-generated pytest tests
 ├── AGENTS.md            # Tool index for coding agents
 ├── mcp.json             # MCP client config
 └── pyproject.toml       # pip install -e .
@@ -126,7 +124,6 @@ That leaves **67 unique REST tools** — exactly what we generate.
 | **Build time** | Months | ~6 seconds | ~6 seconds |
 | **Coverage** | Curated subset + GraphQL | Entire REST API | Same REST endpoints as official |
 | **Scope control** | Hardcoded in Go | None | `scope.yaml` (69 lines) |
-| **Tests** | Hand-written | 1,095 auto-generated | 200 auto-generated |
 
 ### How the scope file works
 
@@ -196,7 +193,6 @@ github-server-scoped/
 │   ├── tools/api.py        # 67 tool handlers
 │   ├── prompts.py          # MCP prompts
 │   └── resources.py        # MCP resources
-├── tests/                  # 200 auto-generated pytest tests
 ├── AGENTS.md               # Tool index for coding agents
 ├── mcp.json                # MCP client config
 └── pyproject.toml          # pip install -e .
